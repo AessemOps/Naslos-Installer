@@ -43,10 +43,13 @@ dry-run) → render machine config → generate Talos config, streaming NDJSON.
 
 ### Not implemented / not wired
 
-- `internal/talosclient` is **not yet called** from `cmd/naslos-install`, and is
-  **not live-drilled** (the network half of spike 2).
-- Helm install, local-path/CRDs, admin creation, TOTP bootstrap, resolver,
-  recovery ZIP, the Tauri shell and CI are all still to do (see the plan).
+- `internal/talosclient` is wired into `cmd/naslos-install` (maintenance Dial →
+  WaitForAPI → Apply → authenticated Dial → WaitForAPI → Bootstrap →
+  WaitForServices(etcd,kubelet) → Kubeconfig), but is **not live-drilled**: the
+  network half of spike 2 needs a freshly-booted node.
+- Storage/CRDs, Helm install, admin creation, TOTP bootstrap, resolver,
+  recovery ZIP, the Tauri shell and CI are all still to do (see the plan). After
+  kubeconfig the engine fails closed at the `storage` step.
 
 ## Spike results (validated 2026-09-27)
 
@@ -107,11 +110,10 @@ go run ./cmd/naslos-install \
 
 ## Next steps (in order)
 
-1. **I2b wiring + live drill**: call `internal/talosclient` from
-   `cmd/naslos-install` (Dial → WaitForAPI → Apply → WaitForAPI → Bootstrap →
-   WaitForAPI(kubelet/etcd) → Kubeconfig). Validate on a freshly-booted node
-   (wipe `/dev/vda` from the ISO). Do **not** point it at the installed
-   `192.168.1.117` production node.
+1. **I2b live drill**: the client is wired (Dial → apply → authenticated Dial →
+   bootstrap → services → kubeconfig). Validate on a freshly-booted node (wipe
+   `/dev/vda` from the ISO). Do **not** point it at the installed `192.168.1.117`
+   production node.
 2. **I3** storage: apply `manifests/local-path-v0.0.26.yaml`, label its
    namespace `privileged`, patch `local-path` as default StorageClass; apply the
    Traefik CRDs.
@@ -138,6 +140,7 @@ go run ./cmd/naslos-install \
 
 ## Session caveat
 
-This session hit tooling issues and stopped after committing the Talos lifecycle
-client. The engine compiles and unit-tests pass, but `talosclient` is unused by
-`cmd` and no cluster has been touched. Treat PR #1 as **not live-validated**.
+This session hit tooling issues. The engine compiles and unit-tests pass; the
+Talos lifecycle is wired but **no node has been touched**. Treat PR #1 as
+**not live-validated** — the next session must run the I2b drill on a fresh
+node before relying on it.

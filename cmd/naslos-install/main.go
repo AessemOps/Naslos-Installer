@@ -12,6 +12,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -26,7 +27,9 @@ import (
 	"github.com/AessemOps/Naslos-Installer/internal/installpack"
 	"github.com/AessemOps/Naslos-Installer/internal/preflight"
 	"github.com/AessemOps/Naslos-Installer/internal/state"
+	"github.com/AessemOps/Naslos-Installer/internal/talosclient"
 	"github.com/AessemOps/Naslos-Installer/internal/talosconfig"
+	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 )
 
 // Version is set at build time with -ldflags.
@@ -193,10 +196,81 @@ func run(args []string, stdout io.Writer) error {
 			opts.input.NodeIP, pack.Metadata().NaslosVersion, cpPath))
 	}
 
-	// The cluster lifecycle (apply-config, bootstrap, kubeconfig, storage, CRDs,
-	// Helm, admin, TOTP, resolver, recovery ZIP) is the next increment.
-	return em.Fail("install", "cluster lifecycle is not implemented in this build",
-		"this scaffold stops after machine-config rendering; use --dry-run to validate inputs and the pack")
+	// --- milestone 3: apply the config, bootstrap etcd, fetch kubeconfig ---
+	ctx := context.Background()
+
+	maintenance, err := talosclient.Dial(ctx, opts.input.NodeIP)
+	if err != nil {
+		return em.Fail("talos-install", "cannot open the Talos API", err.Error())
+	}
+	defer maintenance.Close()
+
+	if err := em.Step("talos-install", "Waiting for the installer API", 40); err != nil {
+		return err
+	}
+	if err := talosclient.WaitForAPI(ctx, maintenance, 2*time.Minute); err != nil {
+		return em.Fail("talos-install", "the node did not answer on the Talos API", err.Error())
+	}
+
+	if err := em.Step("talos-install", "Applying the machine configuration", 45); err != nil {
+		return err
+	}
+	if err := maintenance.Apply(ctx, gen.ControlPlane); err != nil {
+		return em.Fail("talos-install", "apply-config failed", err.Error())
+	}
+
+	// The node installs to disk and reboots; the maintenance client can no
+	// longer authenticate, so switch to the generated talosconfig.
+	tcCfg, err := clientconfig.FromBytes(gen.Talosconfig)
+	if err != nil {
+		return em.Fail("talos-install", "cannot read the generated talosconfig", err.Error())
+	}
+	api, err := talosclient.DialAuthenticated(ctx, tcCfg)
+	if err != nil {
+		return em.Fail("talos-install", "cannot open the authenticated Talos API", err.Error())
+	}
+	defer api.Close()
+
+	if err := em.Step("talos-install", "Node is installing; waiting for the API", 50); err != nil {
+		return err
+	}
+	if err := talosclient.WaitForAPI(ctx, api, 25*time.Minute); err != nil {
+		return em.Fail("talos-install", "the installed node did not come back", err.Error())
+	}
+
+	if err := em.Step("bootstrap", "Bootstrapping etcd", 60); err != nil {
+		return err
+	}
+	if err := talosclient.Bootstrap(ctx, api); err != nil {
+		return em.Fail("bootstrap", "bootstrap failed", err.Error())
+	}
+	if err := em.Step("bootstrap", "Waiting for the control plane", 65); err != nil {
+		return err
+	}
+	if err := talosclient.WaitForServices(ctx, api, 5*time.Minute, "etcd", "kubelet"); err != nil {
+		return em.Fail("bootstrap", "the control plane did not become ready", err.Error())
+	}
+
+	kc, err := api.Kubeconfig(ctx)
+	if err != nil {
+		return em.Fail("kubeconfig", "cannot fetch the kubeconfig", err.Error())
+	}
+	kubeconfigPath := filepath.Join(opts.stateDir, "kubeconfig")
+	if err := os.WriteFile(kubeconfigPath, kc, 0o600); err != nil {
+		return em.Fail("kubeconfig", "cannot write kubeconfig", err.Error())
+	}
+	st.SetStep("bootstrap", state.Done, "etcd bootstrapped")
+	if err := st.Save(statePath); err != nil {
+		return em.Fail("state", "cannot persist install state", err.Error())
+	}
+	if err := em.Step("kubeconfig", "Fetched kubeconfig", 70); err != nil {
+		return err
+	}
+
+	// Cluster storage + CRDs, Helm, admin + TOTP, resolver and the recovery ZIP
+	// are the next increments.
+	return em.Fail("storage", "cluster storage, Helm and bootstrap steps are not implemented yet",
+		fmt.Sprintf("node is installed and bootstrapped; kubeconfig at %s", kubeconfigPath))
 }
 
 const installDisk = "/dev/vda"

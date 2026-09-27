@@ -17,6 +17,7 @@ import (
 
 	"github.com/siderolabs/talos/pkg/machinery/api/machine"
 	"github.com/siderolabs/talos/pkg/machinery/client"
+	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"google.golang.org/grpc/codes"
 )
 
@@ -51,6 +52,18 @@ func Dial(ctx context.Context, node string) (API, error) {
 }
 
 type talosAPI struct{ c *client.Client }
+
+// DialAuthenticated opens a client from a generated talosconfig (endpoints +
+// client certificate). Use it after the config has been applied and the node
+// has rebooted into the installed system; the maintenance client can no longer
+// authenticate then.
+func DialAuthenticated(ctx context.Context, tc *clientconfig.Config) (API, error) {
+	c, err := client.New(ctx, client.WithConfig(tc))
+	if err != nil {
+		return nil, fmt.Errorf("opening an authenticated Talos client: %w", err)
+	}
+	return &talosAPI{c: c}, nil
+}
 
 func (t *talosAPI) Apply(ctx context.Context, config []byte) error {
 	_, err := t.c.ApplyConfiguration(ctx, &machine.ApplyConfigurationRequest{
@@ -123,6 +136,34 @@ func Bootstrap(ctx context.Context, api API) error {
 		return err
 	}
 	return nil
+}
+
+// WaitForServices polls the node until every named service reports Running (or
+// the timeout elapses). Used after bootstrap to wait for etcd + kubelet.
+func WaitForServices(ctx context.Context, api API, timeout time.Duration, want ...string) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		if svcs, err := api.Services(ctx); err == nil {
+			allReady := true
+			for _, name := range want {
+				if !strings.Contains(svcs[name], "Running") {
+					allReady = false
+					break
+				}
+			}
+			if allReady {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("services %v did not become ready within %s", want, timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
 }
 
 // IsAlreadyBootstrapped reports whether err means the cluster was bootstrapped
