@@ -69,8 +69,17 @@ bundled as a Tauri sidecar.
 - [ ] **I7 — Tauri v2 shell + Svelte wizard.** Input → confirm → progress/log →
   2FA/QR → ZIP/first-login; sidecar wiring; per-OS bundles (AppImage + deb/rpm,
   .dmg/.app, .msi/.exe).
-- [ ] **I8 — Release CI.** Build the engine per OS, run `tauri build`, attach
-  bundles; fetch + pin the install pack version.
+- [x] **I8a — Engine release CI.** `.github/workflows/ci.yml` (`make check` +
+  pack build) and `release.yml` (cross-build linux/darwin/windows amd64+arm64,
+  per-file sha256, GitHub release). Builds always embed the newest Naslos-Linux
+  `vX.Y.Z` pack: `scripts/fetch-install-pack.sh` resolves the tag, and the
+  Makefile derives `ExpectedTalosVersion`/`ExpectedSchematicID` from the pack's
+  `metadata.json`. Naslos-Linux's `install-pack` workflow sends a
+  `repository_dispatch` (`naslos-release`) so a new pack rebuilds the installer
+  automatically. Plan: `installer-ci-release.md`.
+- [ ] **I8b — Tauri bundles.** Once the shell exists (I7), run `tauri build` per
+  OS and attach AppImage/deb/rpm, .dmg/.app and .msi/.exe alongside the engine
+  binaries.
 
 ## Spike results
 
