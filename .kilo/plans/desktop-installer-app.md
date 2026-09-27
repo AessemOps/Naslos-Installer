@@ -40,7 +40,23 @@ bundled as a Tauri sidecar.
   server-side apply unstructured objects).
 - [ ] **I4 — Helm install.** Install the pack's chart with `values-installer.yaml`
   + engine overrides (domain, discovery name, CIDRs, `openldap.host`) via
-  `helm.sh/helm/v3`; wait on Deployments/StatefulSets.
+  `helm.sh/helm/v3`; wait on Deployments/StatefulSets. Notes from the VM install
+  path (`Naslos-Linux/scripts/deploy-vm.sh`, `make install-vm`):
+  - **CRDs.** The VM path runs `make crds` (`helm show crds traefik | kubectl
+    apply`, cert-manager rendered from its `templates/crds.yaml`) and then passes
+    `--skip-crds`. The install pack ships **no** CRDs, so the engine must either
+    let Helm install the traefik subchart's `crds/` (i.e. do **not** pass
+    `--skip-crds`) or pre-apply them itself. `certManager.enabled` /
+    `ovhWebhook.enabled` are `false` in `values-installer.yaml`.
+  - **`naslos` namespace + `naslos-talosconfig`.** The chart has no template for
+    the Secret `api.talosConfigSecret` mounts, so the engine must create the
+    `naslos` namespace and the `naslos-talosconfig` Secret from the generated
+    talosconfig (endpoints already filled) **before** the Helm install, then
+    adopt the pre-created namespace (`--take-ownership`, mirroring deploy-vm.sh).
+  - **Helm version.** The repo CLI is Helm 4 (server-side apply; that is what the
+    `--force-conflicts`/`--take-ownership` comments refer to) while the Go module
+    cache has `helm.sh/helm/v3` v3.18.5. Pick one deliberately and pin it; do not
+    assume the v3 SDK's apply semantics match Helm 4.
 - [ ] **I5 — Bootstrap admin + TOTP.** Exec `curl` into `deploy/naslos-terminal`
   to `POST /api/users` (owner headers from the `naslos-proxy` Secret), verify
   with `GET /api/users`; exec `authelia storage user totp generate <uid> --issuer
