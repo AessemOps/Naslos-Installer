@@ -17,17 +17,46 @@ bundled as a Tauri sidecar.
   load + checksum verification + Talos/schematic version gate; machine-config
   rendering; resumable `state.json` (0600); `scripts/fetch-install-pack.sh` +
   Makefile. Dry-run verified against the real `0.1.0` pack.
-- [ ] **I2 — Talos config + lifecycle.** Generate PKI/machine config with
-  `siderolabs/talos/pkg/machinery` from the pack template (strip
-  `UnattendedInstallConfig`), persist the Talos secrets bundle, insecure
-  `apply-config`, wait for the API, `bootstrap` (already-bootstrapped = success),
-  health wait, `Kubeconfig` fetch. Refuse to regenerate PKI when state exists.
-- [ ] **I3 — Cluster storage + CRDs.** Apply the pack's pinned local-path
-  manifest, label its namespace `privileged`, patch `local-path` as default
-  StorageClass; apply the Traefik CRDs.
+- [x] **I2a — Talos config generation.** `internal/talosconfig`: PKI/secrets bundle
+  persisted and reused (never re-key), control-plane config generated with
+  `siderolabs/talos/pkg/machinery` from the pack patch, `UnattendedInstallConfig`
+  skipped, talosconfig endpoints filled. Verified against `talosctl gen config`
+  on the real pack patch (all key docs MATCH). Note: `NewInput`'s third arg is
+  the *Kubernetes* version; the Talos feature set comes from the version
+  contract.
+- [x] **I2b — Talos lifecycle client.** `internal/talosclient`:
+  maintenance-mode apply, wait-for-API, authenticated switch, bootstrap
+  (already-bootstrapped = success, auth errors not swallowed), service wait,
+  kubeconfig. Wired into `cmd/naslos-install`. **Live drill still pending** on a
+  freshly-booted node (not the installed `.117`).
+- [x] **I3 — Cluster storage + CRDs.** `internal/k8s`: server-side apply of the
+  pack's pinned local-path manifest, label its namespace `privileged`, patch
+  `local-path` as default StorageClass, wait for the provisioner Deployment, and
+  wait for the Cilium DaemonSet before scheduling workloads. The Traefik CRDs are
+  **not** applied by the engine: they ship in the traefik subchart's `crds/`
+  directory and Helm installs them before the chart's Traefik custom resources
+  (verified with `helm template --include-crds`). Wired into `cmd/naslos-install`;
+  unit-tested with a recording dynamic client (the client-go dynamic fake cannot
+  server-side apply unstructured objects).
 - [ ] **I4 — Helm install.** Install the pack's chart with `values-installer.yaml`
   + engine overrides (domain, discovery name, CIDRs, `openldap.host`) via
-  `helm.sh/helm/v3`; wait on Deployments/StatefulSets.
+  `helm.sh/helm/v3`; wait on Deployments/StatefulSets. Notes from the VM install
+  path (`Naslos-Linux/scripts/deploy-vm.sh`, `make install-vm`):
+  - **CRDs.** The VM path runs `make crds` (`helm show crds traefik | kubectl
+    apply`, cert-manager rendered from its `templates/crds.yaml`) and then passes
+    `--skip-crds`. The install pack ships **no** CRDs, so the engine must either
+    let Helm install the traefik subchart's `crds/` (i.e. do **not** pass
+    `--skip-crds`) or pre-apply them itself. `certManager.enabled` /
+    `ovhWebhook.enabled` are `false` in `values-installer.yaml`.
+  - **`naslos` namespace + `naslos-talosconfig`.** The chart has no template for
+    the Secret `api.talosConfigSecret` mounts, so the engine must create the
+    `naslos` namespace and the `naslos-talosconfig` Secret from the generated
+    talosconfig (endpoints already filled) **before** the Helm install, then
+    adopt the pre-created namespace (`--take-ownership`, mirroring deploy-vm.sh).
+  - **Helm version.** The repo CLI is Helm 4 (server-side apply; that is what the
+    `--force-conflicts`/`--take-ownership` comments refer to) while the Go module
+    cache has `helm.sh/helm/v3` v3.18.5. Pick one deliberately and pin it; do not
+    assume the v3 SDK's apply semantics match Helm 4.
 - [ ] **I5 — Bootstrap admin + TOTP.** Exec `curl` into `deploy/naslos-terminal`
   to `POST /api/users` (owner headers from the `naslos-proxy` Secret), verify
   with `GET /api/users`; exec `authelia storage user totp generate <uid> --issuer
@@ -55,6 +84,12 @@ bundled as a Tauri sidecar.
   Fallback = portal enrolment + read the elevated-session code from
   `/config/notification.txt`. Portal *acceptance* of a CLI-created device is
   confirmed in the end-to-end drill.
+- **Machine-config generation (2026-09-27, offline):** `internal/talosconfig`
+  renders the real `0.1.0` pack patch through `pkg/machinery` and the output
+  matches `talosctl gen config` (with the same patch) for `KubeNodeConfig`,
+  `KubeProxyConfig`, `ResolverConfig`, `KubeInlineManifestConfig`,
+  `KubeFlannelCNIConfig` and the machine install/kernel/network subset. The
+  insecure `apply-config` + `bootstrap` half of spike 2 still needs a live node.
 
 ## Constraints (from the contract)
 
