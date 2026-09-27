@@ -1,0 +1,64 @@
+# Naslos-Installer — implementation plan
+
+Repo: `AessemOps/Naslos-Installer` (this repo).
+Companion plan: `Naslos-Linux/.kilo/plans/1790466900440-desktop-installer-app.md`.
+Contract (stable interfaces): `Naslos-Linux/docs/installer-contract.md`.
+Spec: `docs/spec.md` §FR-INSTALL.
+
+The desktop installer provisions a Talos node booted from the Naslos ZFS ISO end
+to end, with a progress bar, first-admin + 2FA handoff and a recovery ZIP. The
+engine is a standalone Go binary (`naslos-install`) so it can run headless and be
+bundled as a Tauri sidecar.
+
+## Increments
+
+- [x] **I1 — Engine foundation.** Module; `internal/{config,event,installpack,
+  otpauth,preflight,state}`; `cmd/naslos-install` with NDJSON progress; pack
+  load + checksum verification + Talos/schematic version gate; machine-config
+  rendering; resumable `state.json` (0600); `scripts/fetch-install-pack.sh` +
+  Makefile. Dry-run verified against the real `0.1.0` pack.
+- [ ] **I2 — Talos config + lifecycle.** Generate PKI/machine config with
+  `siderolabs/talos/pkg/machinery` from the pack template (strip
+  `UnattendedInstallConfig`), persist the Talos secrets bundle, insecure
+  `apply-config`, wait for the API, `bootstrap` (already-bootstrapped = success),
+  health wait, `Kubeconfig` fetch. Refuse to regenerate PKI when state exists.
+- [ ] **I3 — Cluster storage + CRDs.** Apply the pack's pinned local-path
+  manifest, label its namespace `privileged`, patch `local-path` as default
+  StorageClass; apply the Traefik CRDs.
+- [ ] **I4 — Helm install.** Install the pack's chart with `values-installer.yaml`
+  + engine overrides (domain, discovery name, CIDRs, `openldap.host`) via
+  `helm.sh/helm/v3`; wait on Deployments/StatefulSets.
+- [ ] **I5 — Bootstrap admin + TOTP.** Exec `curl` into `deploy/naslos-terminal`
+  to `POST /api/users` (owner headers from the `naslos-proxy` Secret), verify
+  with `GET /api/users`; exec `authelia storage user totp generate <uid> --issuer
+  <domain>` in `naslos-authelia-0`, parse the `otpauth://` URI
+  (`internal/otpauth`), render a QR.
+- [ ] **I6 — Resolver + recovery ZIP.** Best-effort elevated hosts entry per OS
+  (marked line, always show the fallback record); recovery ZIP with
+  talosconfig/controlplane/secrets bundle/kubeconfig/schematic/ISO.md/README.txt
+  (no admin password; warn that `buddy-identity.json` is the backup KEK).
+- [ ] **I7 — Tauri v2 shell + Svelte wizard.** Input → confirm → progress/log →
+  2FA/QR → ZIP/first-login; sidecar wiring; per-OS bundles (AppImage + deb/rpm,
+  .dmg/.app, .msi/.exe).
+- [ ] **I8 — Release CI.** Build the engine per OS, run `tauri build`, attach
+  bundles; fetch + pin the install pack version.
+
+## Spike results
+
+- **TOTP (2026-09-27, live VM):** `authelia storage user totp generate <uid>
+  --issuer <domain>` runs in `naslos-authelia-0` (config + encryption key
+  auto-resolved from the pod env), prints
+  `Successfully generated TOTP configuration for user '<uid>' with URI
+  'otpauth://totp/<issuer>:<uid>?...&secret=<BASE32>'`, and `... totp delete
+  <uid>` removes it. Verified reversibly with a throwaway username; the admin's
+  device was untouched. Primary mechanism = CLI generate + parse URI + QR.
+  Fallback = portal enrolment + read the elevated-session code from
+  `/config/notification.txt`. Portal *acceptance* of a CLI-created device is
+  confirmed in the end-to-end drill.
+
+## Constraints (from the contract)
+
+- Never regenerate Talos PKI against an installed node.
+- Engine defines all command arguments; never expose arbitrary shell input (SEC-1).
+- `--json-progress` NDJSON on stdout is the only shell↔engine coupling.
+- Record `naslosVersion` in the recovery README; refuse version-skewed packs.
