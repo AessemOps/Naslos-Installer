@@ -24,9 +24,11 @@ bundled as a Tauri sidecar.
   on the real pack patch (all key docs MATCH). Note: `NewInput`'s third arg is
   the *Kubernetes* version; the Talos feature set comes from the version
   contract.
-- [ ] **I2b — Talos lifecycle.** Insecure `apply-config`, wait for the API,
-  `bootstrap` (already-bootstrapped = success), health wait, `Kubeconfig`
-  fetch via the Go client.
+- [x] **I2b — Talos lifecycle client.** `internal/talosclient`:
+  maintenance-mode apply, wait-for-API, authenticated switch, bootstrap
+  (already-bootstrapped = success, auth errors not swallowed), service wait,
+  kubeconfig. Wired into `cmd/naslos-install`. **Live drill still pending** on a
+  freshly-booted node (not the installed `.117`).
 - [ ] **I3 — Cluster storage + CRDs.** Apply the pack's pinned local-path
   manifest, label its namespace `privileged`, patch `local-path` as default
   StorageClass; apply the Traefik CRDs.
