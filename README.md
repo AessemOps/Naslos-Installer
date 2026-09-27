@@ -26,6 +26,7 @@ internal/installpack      load, verify and render an install pack
 internal/otpauth          parse the Authelia otpauth:// enrolment output
 internal/preflight        node reachability (:50000 maintenance / :6443 installed)
 internal/state            resumable <app-data>/naslos-install/state.json (0600)
+internal/talosconfig      PKI + machine-config/talosconfig generation (machinery)
 installpack/              go:embed target (gitignored; populated by fetch)
 scripts/fetch-install-pack.sh
 desktop/                  Tauri v2 shell + Svelte wizard (next increment)
@@ -52,12 +53,16 @@ dist/naslos-install \
 
 Implemented: inputs/validation, pack load + checksum verification + version
 gate, machine-config rendering, node preflight, resumable state, NDJSON
-progress.
+progress, and Talos PKI + control-plane/talosconfig generation via
+`siderolabs/talos/pkg/machinery` (persisted secrets bundle; reuse never re-keys
+a node). The generated control plane matches `talosctl gen config` on the pack
+patch (install image, Cilium inline manifest, kube-proxy/flannel disabled,
+host-DNS, `KubeNodeConfig`).
 
-Next increments (see Plan): Talos config generation + insecure apply-config +
-bootstrap + kubeconfig, local-path + CRDs, Helm install from the pack, admin +
-TOTP bootstrap, resolver hosts entry, recovery ZIP, then the Tauri shell and
-per-OS bundles.
+Next increments (see `.kilo/plans/desktop-installer-app.md`): insecure
+`apply-config` + bootstrap + kubeconfig, local-path + CRDs, Helm install from
+the pack, admin + TOTP bootstrap, resolver hosts entry, recovery ZIP, then the
+Tauri shell and per-OS bundles.
 
 ## License
 
