@@ -1,0 +1,133 @@
+# Build and release the Naslos installer engine.
+#
+# The engine always embeds the newest Naslos-Linux vX.Y.Z install pack: the
+# workflow resolves the tag, fetches + sha256-verifies the pack, and the Makefile
+# derives the Talos/schematic gate from that pack's metadata.json. Naslos-Linux
+# triggers this workflow with a repository_dispatch (`naslos-release`) once it
+# attaches a new pack, so a released pack yields a released installer.
+#
+# Triggers:
+#   - push a v* tag            -> release that tag
+#   - workflow_dispatch        -> release `naslos-v<version>` (optional pin)
+#   - repository_dispatch      -> release `naslos-v<version>` for the new pack
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      naslos_version:
+        description: "Naslos-Linux version to embed (default: newest vX.Y.Z tag)"
+        required: false
+        type: string
+  repository_dispatch:
+    types: [naslos-release]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+      NASLOS_VERSION_INPUT: ${{ github.event.inputs.naslos_version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve the Naslos-Linux version
+        id: naslos
+        run: |
+          set -euo pipefail
+          if [ -n "${NASLOS_VERSION_INPUT}" ]; then
+            tag="v${NASLOS_VERSION_INPUT#v}"
+          else
+            tag=$(git ls-remote --tags --refs --sort=-v:refname \
+                    https://github.com/AessemOps/Naslos-Linux.git 'v*' \
+                  | awk '{print $2}' | sed 's#^refs/tags/##' \
+                  | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::no vX.Y.Z tag found on AessemOps/Naslos-Linux"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Embedding Naslos-Linux ${tag}"
+
+      - name: Resolve the installer release tag
+        id: release
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+            version="${GITHUB_REF_NAME}"
+          else
+            tag="naslos-${{ steps.naslos.outputs.tag }}"
+            version="${{ steps.naslos.outputs.tag }}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "name=Naslos Installer (Naslos ${{ steps.naslos.outputs.tag }})" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${tag} (artifacts ${version})"
+
+      - name: Fetch and verify the install pack
+        run: PACK_TAG="${{ steps.naslos.outputs.tag }}" ./scripts/fetch-install-pack.sh
+
+      - name: Build the engine for every target
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/release
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}"; arch="${target#*/}"
+            echo "::group::build ${target}"
+            GOOS="$os" GOARCH="$arch" make build VERSION="${VERSION}"
+            if [ "$os" = "windows" ]; then
+              mv dist/naslos-install dist/release/naslos-install.exe
+              ( cd dist/release && zip -q "naslos-install_${VERSION}_${os}_${arch}.zip" naslos-install.exe && rm naslos-install.exe )
+            else
+              mv dist/naslos-install dist/release/naslos-install
+              ( cd dist/release && tar -czf "naslos-install_${VERSION}_${os}_${arch}.tar.gz" naslos-install && rm naslos-install )
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Checksums and release notes
+        run: |
+          set -euo pipefail
+          ( cd dist/release && sha256sum naslos-install_* > checksums.txt )
+          python3 - "${{ steps.naslos.outputs.tag }}" <<'PY'
+          import json, sys
+          m = json.load(open("installpack/metadata.json"))
+          tag = sys.argv[1]
+          with open("dist/notes.md", "w") as f:
+              f.write(f"Naslos installer engine built against **Naslos-Linux {tag}**.\n\n")
+              f.write("| Pack field | Value |\n| --- | --- |\n")
+              f.write(f"| naslosVersion | `{m['naslosVersion']}` |\n")
+              f.write(f"| talosVersion | `{m['talosVersion']}` |\n")
+              f.write(f"| schematicId | `{m['schematicId']}` |\n")
+              f.write(f"| chartVersion | `{m['chartVersion']}` |\n")
+          PY
+          cat dist/release/checksums.txt
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: ${{ steps.release.outputs.name }}
+          body_path: dist/notes.md
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/release/naslos-install_*
+            dist/release/checksums.txt
