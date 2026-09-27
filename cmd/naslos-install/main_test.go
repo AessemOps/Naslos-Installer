@@ -17,7 +17,7 @@ func writePack(t *testing.T, talosVersion string) string {
 	t.Helper()
 	dir := t.TempDir()
 	members := map[string]string{
-		"machine-config/naslos-installer.yaml.tmpl": "subnet: \"{{NODE_SUBNET}}\"\ndisk: \"{{INSTALL_DISK}}\"\n",
+		"machine-config/naslos-installer.yaml.tmpl": "# node subnet {{NODE_SUBNET}}\nmachine:\n  install:\n    disk: \"{{INSTALL_DISK}}\"\n---\napiVersion: v1alpha1\nkind: KubeFlannelCNIConfig\n$patch: delete\n",
 		"schematic/naslos.yaml":                     "customization: {}\n",
 	}
 	checksums := map[string]string{}

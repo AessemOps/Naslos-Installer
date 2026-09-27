@@ -26,6 +26,7 @@ import (
 	"github.com/AessemOps/Naslos-Installer/internal/installpack"
 	"github.com/AessemOps/Naslos-Installer/internal/preflight"
 	"github.com/AessemOps/Naslos-Installer/internal/state"
+	"github.com/AessemOps/Naslos-Installer/internal/talosconfig"
 )
 
 // Version is set at build time with -ldflags.
@@ -150,9 +151,46 @@ func run(args []string, stdout io.Writer) error {
 		return err
 	}
 
+	// --- milestone 2 (continued): Talos PKI + control-plane config ---
+	// The secrets bundle is persisted and reused, so a resume never re-keys an
+	// installed node (FR-INSTALL-09).
+	secretsPath := filepath.Join(opts.stateDir, "talos-secrets.json")
+	bundle, reused, err := talosconfig.LoadOrCreateBundle(secretsPath, pack.Metadata().TalosVersion)
+	if err != nil {
+		return em.Fail("talos-config", "cannot prepare the Talos PKI", err.Error())
+	}
+	gen, err := talosconfig.Generate(talosconfig.Inputs{
+		ClusterName:  "naslos",
+		NodeIP:       opts.input.NodeIP,
+		TalosVersion: pack.Metadata().TalosVersion,
+		InstallDisk:  installDisk,
+	}, rendered, bundle)
+	if err != nil {
+		return em.Fail("talos-config", "cannot generate the Talos config", err.Error())
+	}
+	cpPath := filepath.Join(opts.stateDir, "controlplane.yaml")
+	tcPath := filepath.Join(opts.stateDir, "talosconfig")
+	if err := os.WriteFile(cpPath, gen.ControlPlane, 0o600); err != nil {
+		return em.Fail("talos-config", "cannot write controlplane.yaml", err.Error())
+	}
+	if err := os.WriteFile(tcPath, gen.Talosconfig, 0o600); err != nil {
+		return em.Fail("talos-config", "cannot write talosconfig", err.Error())
+	}
+	msg := "Talos config generated"
+	if reused {
+		msg = "Talos config generated (reused existing PKI)"
+	}
+	st.SetStep("talos-config", state.Done, msg)
+	if err := st.Save(statePath); err != nil {
+		return em.Fail("state", "cannot persist install state", err.Error())
+	}
+	if err := em.Step("talos-config", msg, 35); err != nil {
+		return err
+	}
+
 	if opts.dryRun {
-		return emDone(fmt.Sprintf("dry-run complete for %s (pack %s, machine config %s)",
-			opts.input.NodeIP, pack.Metadata().NaslosVersion, mcPath))
+		return emDone(fmt.Sprintf("dry-run complete for %s (pack %s; controlplane %s)",
+			opts.input.NodeIP, pack.Metadata().NaslosVersion, cpPath))
 	}
 
 	// The cluster lifecycle (apply-config, bootstrap, kubeconfig, storage, CRDs,

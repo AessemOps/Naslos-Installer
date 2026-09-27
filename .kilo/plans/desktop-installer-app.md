@@ -17,11 +17,16 @@ bundled as a Tauri sidecar.
   load + checksum verification + Talos/schematic version gate; machine-config
   rendering; resumable `state.json` (0600); `scripts/fetch-install-pack.sh` +
   Makefile. Dry-run verified against the real `0.1.0` pack.
-- [ ] **I2 — Talos config + lifecycle.** Generate PKI/machine config with
-  `siderolabs/talos/pkg/machinery` from the pack template (strip
-  `UnattendedInstallConfig`), persist the Talos secrets bundle, insecure
-  `apply-config`, wait for the API, `bootstrap` (already-bootstrapped = success),
-  health wait, `Kubeconfig` fetch. Refuse to regenerate PKI when state exists.
+- [x] **I2a — Talos config generation.** `internal/talosconfig`: PKI/secrets bundle
+  persisted and reused (never re-key), control-plane config generated with
+  `siderolabs/talos/pkg/machinery` from the pack patch, `UnattendedInstallConfig`
+  skipped, talosconfig endpoints filled. Verified against `talosctl gen config`
+  on the real pack patch (all key docs MATCH). Note: `NewInput`'s third arg is
+  the *Kubernetes* version; the Talos feature set comes from the version
+  contract.
+- [ ] **I2b — Talos lifecycle.** Insecure `apply-config`, wait for the API,
+  `bootstrap` (already-bootstrapped = success), health wait, `Kubeconfig`
+  fetch via the Go client.
 - [ ] **I3 — Cluster storage + CRDs.** Apply the pack's pinned local-path
   manifest, label its namespace `privileged`, patch `local-path` as default
   StorageClass; apply the Traefik CRDs.
@@ -55,6 +60,12 @@ bundled as a Tauri sidecar.
   Fallback = portal enrolment + read the elevated-session code from
   `/config/notification.txt`. Portal *acceptance* of a CLI-created device is
   confirmed in the end-to-end drill.
+- **Machine-config generation (2026-09-27, offline):** `internal/talosconfig`
+  renders the real `0.1.0` pack patch through `pkg/machinery` and the output
+  matches `talosctl gen config` (with the same patch) for `KubeNodeConfig`,
+  `KubeProxyConfig`, `ResolverConfig`, `KubeInlineManifestConfig`,
+  `KubeFlannelCNIConfig` and the machine install/kernel/network subset. The
+  insecure `apply-config` + `bootstrap` half of spike 2 still needs a live node.
 
 ## Constraints (from the contract)
 
