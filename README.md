@@ -9,8 +9,10 @@ This repo is the app half of a two-repo split:
 - [`AessemOps/Naslos-Linux`](https://github.com/AessemOps/Naslos-Linux) owns the
   declarative install artifacts and publishes a versioned **install pack**
   (`naslos-install-pack-<version>.tar.gz`) as a GitHub release.
-- This repo pins a pack version, downloads + checksum-verifies it at build time,
-  and `go:embed`s it (`scripts/fetch-install-pack.sh`).
+- This repo resolves the **newest `vX.Y.Z` tag** of Naslos-Linux, downloads +
+  checksum-verifies that pack at build time, and `go:embed`s it
+  (`scripts/fetch-install-pack.sh`). Naslos-Linux dispatches a rebuild here when
+  it publishes a new pack, so a released pack always yields a released installer.
 
 The stable interfaces (pack schema, cluster object names, first-admin payload,
 TOTP command, progress protocol) are the **contract**:
@@ -31,6 +33,7 @@ internal/talosclient      Talos lifecycle (apply-config/bootstrap/kubeconfig)
 internal/talosconfig      PKI + machine-config/talosconfig generation (machinery)
 installpack/              go:embed target (gitignored; populated by fetch)
 scripts/fetch-install-pack.sh
+.github/workflows/       ci.yml (test + pack build) and release.yml (per-OS)
 desktop/                  Tauri v2 shell + Svelte wizard (next increment)
 ```
 
@@ -38,8 +41,9 @@ desktop/                  Tauri v2 shell + Svelte wizard (next increment)
 
 ```bash
 make check                 # go vet + go test -race ./...
-make fetch-pack PACK_VERSION=0.1.0
-make build                 # dist/naslos-install
+make fetch-latest-pack     # newest Naslos-Linux vX.Y.Z pack -> installpack/
+make fetch-pack PACK_VERSION=0.1.0   # or pin an explicit version
+make build                 # dist/naslos-install (Talos/schematic from the pack)
 ```
 
 The engine runs without the desktop shell:
@@ -50,6 +54,18 @@ dist/naslos-install \
   --admin-user admin --admin-password 'Correct1' \
   --dry-run
 ```
+
+## CI & releases
+
+- `ci.yml` runs `make check` on every push/PR and, when a Naslos-Linux `vX.Y.Z`
+  release exists, fetches it and builds the engine against the embedded pack.
+- `release.yml` builds `linux`/`darwin`/`windows` (amd64 + arm64), packages each
+  binary with per-file sha256 checksums, and publishes a GitHub release. It runs
+  on an installer `v*` tag, on manual dispatch (with an optional
+  `naslos_version` input), and on the `naslos-release` repository dispatch that
+  Naslos-Linux sends when it publishes a pack. Every build embeds the newest
+  Naslos-Linux `vX.Y.Z` tag and derives `ExpectedTalosVersion` /
+  `ExpectedSchematicID` from that pack, so the FR-INSTALL-02 gate always matches.
 
 ## Status
 
