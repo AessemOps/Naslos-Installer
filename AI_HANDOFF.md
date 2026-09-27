@@ -50,6 +50,11 @@ dry-run) → render machine config → generate Talos config, streaming NDJSON.
 - Storage/CRDs, Helm install, admin creation, TOTP bootstrap, resolver,
   recovery ZIP, the Tauri shell and CI are all still to do (see the plan). After
   kubeconfig the engine fails closed at the `storage` step.
+- An I3 `internal/k8s` (client-go local-path apply) was started in this session
+  and removed again to keep the branch verified; re-do it fresh. The pack ships
+  local-path but **not** the Traefik CRDs — confirm during I4 whether Helm
+  installs them from the traefik subchart's `crds/` or whether the pack needs a
+  CRDs member.
 
 ## Spike results (validated 2026-09-27)
 
