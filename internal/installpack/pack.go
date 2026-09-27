@@ -135,6 +135,17 @@ func (p *Pack) RenderMachineConfig(vars map[string]string) ([]byte, error) {
 	return []byte(out), nil
 }
 
+// ReadFile returns the raw bytes of one pack member (relative path). It is
+// guarded against escaping the pack so a malformed metadata cannot read the
+// host filesystem.
+func (p *Pack) ReadFile(rel string) ([]byte, error) {
+	rel = path.Clean(rel)
+	if strings.HasPrefix(rel, "..") || path.IsAbs(rel) {
+		return nil, fmt.Errorf("pack member escapes the pack: %q", rel)
+	}
+	return fs.ReadFile(p.fsys, rel)
+}
+
 // Extract writes the whole pack under dst, preserving its layout.
 func (p *Pack) Extract(dst string) error {
 	return fs.WalkDir(p.fsys, ".", func(name string, d fs.DirEntry, err error) error {

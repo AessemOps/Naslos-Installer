@@ -23,9 +23,11 @@ cmd/naslos-install        headless CLI, newline-delimited JSON progress
 internal/config           install inputs + validation/derivations
 internal/event            NDJSON progress protocol
 internal/installpack      load, verify and render an install pack
+internal/k8s              server-side apply of pack manifests + workload waits
 internal/otpauth          parse the Authelia otpauth:// enrolment output
 internal/preflight        node reachability (:50000 maintenance / :6443 installed)
 internal/state            resumable <app-data>/naslos-install/state.json (0600)
+internal/talosclient      Talos lifecycle (apply-config/bootstrap/kubeconfig)
 internal/talosconfig      PKI + machine-config/talosconfig generation (machinery)
 installpack/              go:embed target (gitignored; populated by fetch)
 scripts/fetch-install-pack.sh
@@ -53,14 +55,16 @@ dist/naslos-install \
 
 Implemented: inputs/validation, pack load + checksum verification + version
 gate, machine-config rendering, node preflight, resumable state, NDJSON
-progress, and Talos PKI + control-plane/talosconfig generation via
+progress, Talos PKI + control-plane/talosconfig generation via
 `siderolabs/talos/pkg/machinery` (persisted secrets bundle; reuse never re-keys
-a node). The generated control plane matches `talosctl gen config` on the pack
-patch (install image, Cilium inline manifest, kube-proxy/flannel disabled,
-host-DNS, `KubeNodeConfig`).
+a node), the Talos lifecycle (maintenance apply → wait → bootstrap →
+kubeconfig), and the cluster storage step (startup CNI wait, local-path
+provisioner server-side apply, PodSecurity label, default StorageClass). The
+generated control plane matches `talosctl gen config` on the pack patch (install
+image, Cilium inline manifest, kube-proxy/flannel disabled, host-DNS,
+`KubeNodeConfig`).
 
-Next increments (see `.kilo/plans/desktop-installer-app.md`): insecure
-`apply-config` + bootstrap + kubeconfig, local-path + CRDs, Helm install from
+Next increments (see `.kilo/plans/desktop-installer-app.md`): Helm install from
 the pack, admin + TOTP bootstrap, resolver hosts entry, recovery ZIP, then the
 Tauri shell and per-OS bundles.
 

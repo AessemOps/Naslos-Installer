@@ -29,9 +29,15 @@ bundled as a Tauri sidecar.
   (already-bootstrapped = success, auth errors not swallowed), service wait,
   kubeconfig. Wired into `cmd/naslos-install`. **Live drill still pending** on a
   freshly-booted node (not the installed `.117`).
-- [ ] **I3 — Cluster storage + CRDs.** Apply the pack's pinned local-path
-  manifest, label its namespace `privileged`, patch `local-path` as default
-  StorageClass; apply the Traefik CRDs.
+- [x] **I3 — Cluster storage + CRDs.** `internal/k8s`: server-side apply of the
+  pack's pinned local-path manifest, label its namespace `privileged`, patch
+  `local-path` as default StorageClass, wait for the provisioner Deployment, and
+  wait for the Cilium DaemonSet before scheduling workloads. The Traefik CRDs are
+  **not** applied by the engine: they ship in the traefik subchart's `crds/`
+  directory and Helm installs them before the chart's Traefik custom resources
+  (verified with `helm template --include-crds`). Wired into `cmd/naslos-install`;
+  unit-tested with a recording dynamic client (the client-go dynamic fake cannot
+  server-side apply unstructured objects).
 - [ ] **I4 — Helm install.** Install the pack's chart with `values-installer.yaml`
   + engine overrides (domain, discovery name, CIDRs, `openldap.host`) via
   `helm.sh/helm/v3`; wait on Deployments/StatefulSets.
