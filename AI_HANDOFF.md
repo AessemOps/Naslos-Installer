@@ -17,11 +17,13 @@ Tauri sidecar. Nothing here touches a node without the user's inputs.
 
 - `main` @ `f9fb079` (first commit — repo bootstrap).
 - **Open PR [#1](https://github.com/AessemOps/Naslos-Installer/pull/1)**,
-  branch `feat/engine-talos-config` (`main`..`391f225`):
+  branch `feat/engine-talos-config` (`main`..`823267e`):
   - `35287b4` `feat(engine): generate Talos PKI + machine config from the pack`
   - `391f225` `feat(engine): Talos lifecycle client (apply/bootstrap/kubeconfig)`
+  - `876e5ee` `chore(engine): drop I3 work-in-progress and tidy modules`
+  - `823267e` `feat(engine): apply cluster storage (local-path) after bootstrap`
 - Working tree clean. `go build ./...`, `go vet ./...`, `go test -race ./...`
-  all pass.
+  all pass (`make check`).
 
 ### Implemented and verified
 
@@ -29,32 +31,32 @@ Tauri sidecar. Nothing here touches a node without the user's inputs.
 | --- | --- | --- |
 | `internal/config` | install inputs + validation (IPv4, domain, NetBIOS name, Authelia password policy), derivations (`ShortName`, `Subnet24`, `AutheliaURL`) | unit tests |
 | `internal/event` | NDJSON progress protocol (`step/status/pct/msg`, terminal `done`, `error`) | unit tests |
-| `internal/installpack` | parse `metadata.json`, sha256-verify every member, refuse talosVersion/schematicId skew, render `{{NODE_SUBNET}}`/`{{INSTALL_DISK}}`, extract | unit tests + real `0.1.0` pack |
+| `internal/installpack` | parse `metadata.json`, sha256-verify every member, refuse talosVersion/schematicId skew, render `{{NODE_SUBNET}}`/`{{INSTALL_DISK}}`, read members, extract | unit tests + real `0.1.0` pack |
 | `internal/otpauth` | parse Authelia's `otpauth://` output (base32 + >20-byte secret) | unit tests |
 | `internal/preflight` | classify node: `:6443` => installed, else `:50000` => maintenance | unit tests |
 | `internal/state` | `state.json` (0600), resumable step status | unit tests |
 | `internal/talosconfig` | persist/reuse Talos secrets bundle (never re-key), generate control plane from the pack patch via `pkg/machinery`, skip `UnattendedInstallConfig`, fill talosconfig endpoints | unit tests + parity vs `talosctl gen config` |
 | `internal/talosclient` | maintenance-mode client: apply / wait-for-API / bootstrap / kubeconfig / service states; already-bootstrapped = success | unit tests (fake API) |
+| `internal/k8s` | server-side apply of pack manifests (discovery-backed dynamic client), namespace label merge, default StorageClass annotation, Deployment/DaemonSet ready waits | unit tests (recording dynamic client) |
 
 `cmd/naslos-install` runs: validate → load/verify pack → preflight (skipped in
-dry-run) → render machine config → generate Talos config, streaming NDJSON.
-`--dry-run` stops after config generation; the real flow fails closed at
-“cluster lifecycle is not implemented in this build”.
+dry-run) → render machine config → generate Talos config → maintenance Dial →
+Apply → authenticated Dial → Bootstrap → services → kubeconfig → wait for the
+Cilium DaemonSet → apply local-path + PSA label + default StorageClass →
+provisioner ready, streaming NDJSON. `--dry-run` stops after config generation;
+the real flow fails closed at the `helm` step.
 
 ### Not implemented / not wired
 
-- `internal/talosclient` is wired into `cmd/naslos-install` (maintenance Dial →
-  WaitForAPI → Apply → authenticated Dial → WaitForAPI → Bootstrap →
-  WaitForServices(etcd,kubelet) → Kubeconfig), but is **not live-drilled**: the
-  network half of spike 2 needs a freshly-booted node.
-- Storage/CRDs, Helm install, admin creation, TOTP bootstrap, resolver,
-  recovery ZIP, the Tauri shell and CI are all still to do (see the plan). After
-  kubeconfig the engine fails closed at the `storage` step.
-- An I3 `internal/k8s` (client-go local-path apply) was started in this session
-  and removed again to keep the branch verified; re-do it fresh. The pack ships
-  local-path but **not** the Traefik CRDs — confirm during I4 whether Helm
-  installs them from the traefik subchart's `crds/` or whether the pack needs a
-  CRDs member.
+- The Talos + Kubernetes lifecycle is **not live-drilled**: the network halves
+  need a freshly-booted node (see next steps).
+- Helm install, admin creation, TOTP bootstrap, resolver, recovery ZIP, the
+  Tauri shell and CI are all still to do (see the plan). After local-path the
+  engine fails closed at the `helm` step.
+- The Traefik CRDs are **not** applied by the engine: they ship in the traefik
+  subchart's `crds/` directory and Helm installs them before the chart's Traefik
+  custom resources (confirmed with `helm template --include-crds`). Re-check if
+  the subchart's CRD packaging ever changes.
 
 ## Spike results (validated 2026-09-27)
 
@@ -115,23 +117,22 @@ go run ./cmd/naslos-install \
 
 ## Next steps (in order)
 
-1. **I2b live drill**: the client is wired (Dial → apply → authenticated Dial →
-   bootstrap → services → kubeconfig). Validate on a freshly-booted node (wipe
-   `/dev/vda` from the ISO). Do **not** point it at the installed `192.168.1.117`
-   production node.
-2. **I3** storage: apply `manifests/local-path-v0.0.26.yaml`, label its
-   namespace `privileged`, patch `local-path` as default StorageClass; apply the
-   Traefik CRDs.
-3. **I4** Helm: install the pack chart with `values-installer.yaml` + overrides
+1. **Live drill (I2b + I3)**: validate the Talos lifecycle and the storage step
+   on a freshly-booted node (wipe `/dev/vda` from the ISO). Do **not** point it
+   at the installed `192.168.1.117` production node. Confirm the Cilium wait,
+   `local-path` apply + default class, and that the engine stops cleanly at
+   `helm`.
+2. **I4** Helm: install the pack chart with `values-installer.yaml` + overrides
    (domain, `shares.discovery.name`, `openldap.host`, `networkPolicy.*` CIDRs)
-   via `helm.sh/helm/v3`; wait on Deployments/StatefulSets.
-4. **I5** admin + TOTP: `remotecommand.Exec` into `deploy/naslos-terminal`
+   via `helm.sh/helm/v3`; wait on Deployments/StatefulSets. Helm installs the
+   Traefik CRDs from the subchart's `crds/` before the chart's Traefik CRs.
+3. **I5** admin + TOTP: `remotecommand.Exec` into `deploy/naslos-terminal`
    (`naslos-privileged`) with `Remote-User`/`Remote-Groups`/
    `X-Naslos-Proxy-Secret` (read `naslos-proxy`) to `POST /api/users`, then
    `authelia storage user totp generate` in `naslos-authelia-0` and parse with
    `internal/otpauth`.
-5. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8** release CI.
-6. When the pack release exists, wire `make fetch-pack` + a CI job and pin the
+4. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8** release CI.
+5. When the pack release exists, wire `make fetch-pack` + a CI job and pin the
    pack version; add digests to `values-installer.yaml` (NAS-022).
 
 ## Conventions / gates
@@ -145,7 +146,7 @@ go run ./cmd/naslos-install \
 
 ## Session caveat
 
-This session hit tooling issues. The engine compiles and unit-tests pass; the
-Talos lifecycle is wired but **no node has been touched**. Treat PR #1 as
-**not live-validated** — the next session must run the I2b drill on a fresh
-node before relying on it.
+The engine compiles and unit-tests pass. The Talos lifecycle and the storage
+step are wired but **no node has been touched**. Treat PR #1 as **not
+live-validated** — the next session must run the live drill on a fresh node
+before relying on it.
