@@ -50,13 +50,42 @@ the real flow fails closed at the `helm` step.
 
 - The Talos + Kubernetes lifecycle is **not live-drilled**: the network halves
   need a freshly-booted node (see next steps).
-- Helm install, admin creation, TOTP bootstrap, resolver, recovery ZIP, the
-  Tauri shell and CI are all still to do (see the plan). After local-path the
-  engine fails closed at the `helm` step.
+- Helm install, admin creation, TOTP bootstrap, resolver, recovery ZIP and the
+  Tauri shell are all still to do (see the plan). After local-path the engine
+  fails closed at the `helm` step. CI (I8a) is done — see below.
 - The Traefik CRDs are **not** applied by the engine: they ship in the traefik
   subchart's `crds/` directory and Helm installs them before the chart's Traefik
   custom resources (confirmed with `helm template --include-crds`). Re-check if
   the subchart's CRD packaging ever changes.
+
+## CI & release (I8a, added 2026-09-27)
+
+- **`ci.yml`** — `make check` on push/PR; a second job resolves the newest
+  Naslos-Linux `vX.Y.Z` tag, fetches that pack and runs `make build`. If no
+  semver tag exists yet the pack job warns and skips instead of failing.
+- **`release.yml`** — on installer `v*` tag, `workflow_dispatch` (optional
+  `naslos_version` input) and `repository_dispatch: naslos-release`. It resolves
+  the newest Naslos-Linux `vX.Y.Z` tag, fetches + verifies the pack, cross-builds
+  linux/darwin/windows (amd64 + arm64) with `make build VERSION=<release tag>`,
+  packages tar.gz (zip on Windows) + `checksums.txt`, and publishes a GitHub
+  release. Tag-push releases use the pushed tag; dispatch/manual releases use
+  `naslos-v<X.Y.Z>`.
+- **Always-latest pack.** `scripts/fetch-install-pack.sh` with no `PACK_VERSION`
+  resolves the newest `vX.Y.Z` tag (`PACK_TAG` overrides; non-semver tags like
+  the current `latest` release are ignored). The **Makefile** reads
+  `installpack/metadata.json` and defaults `TALOS_VERSION` / `SCHEMATIC_ID` from
+  it, so the FR-INSTALL-02 gate matches the embedded pack; the `v1.14.1` /
+  schematic constants are only the no-pack fallback. Targets: `make
+  fetch-latest-pack` (auto) and `make fetch-pack PACK_VERSION=x.y.z` (pin).
+- **Cross-repo trigger.** `Naslos-Linux/.github/workflows/install-pack.yml` now
+  sends a `repository_dispatch` to this repo after attaching the pack. It needs
+  the `INSTALLER_DISPATCH_TOKEN` secret (fine-grained PAT with
+  `Contents: read and write` / `Actions: write` on `AessemOps/Naslos-Installer`);
+  the step is skipped when the secret is absent. **Not yet configured** — create
+  the secret in Naslos-Linux to enable automatic rebuilds.
+- **Naslos-Linux tags must be semver `vX.Y.Z`.** The only release so far is tag
+  `latest` (name "Alpha001") with no assets, so the pack job currently warns and
+  skips. Create a `vX.Y.Z` tag to publish a pack and light up both pipelines.
 
 ## Spike results (validated 2026-09-27)
 
@@ -95,10 +124,12 @@ the real flow fails closed at the `helm` step.
 5. **`bootstrap`**: treat “already bootstrapped”/gRPC `AlreadyExists` as success,
    but **do not** swallow `unknown authority` (wrong PKI) — see
    `internal/talosclient` tests.
-6. **The pack is not published yet.** `make fetch-pack` needs a `v*` release
-   with `naslos-install-pack-<version>.tar.gz`. Until then, build the pack
-   locally in `Naslos-Linux` (`make install-pack`) and point the engine at it
-   with `--pack-dir dist/…` (extract with `--strip-components=1`).
+6. **The pack is not published yet.** `make fetch-latest-pack` resolves the
+   newest Naslos-Linux `vX.Y.Z` tag; there is none yet (only a non-semver
+   `latest` release with no assets), so it fails. Until a `vX.Y.Z` release
+   exists, build the pack locally in `Naslos-Linux` (`make install-pack`) and
+   point the engine at it with `--pack-dir dist/…` (extract with
+   `--strip-components=1`), or `PACK_VERSION=x.y.z make fetch-pack`.
 
 ## How to run it now (local)
 
@@ -131,9 +162,11 @@ go run ./cmd/naslos-install \
    `X-Naslos-Proxy-Secret` (read `naslos-proxy`) to `POST /api/users`, then
    `authelia storage user totp generate` in `naslos-authelia-0` and parse with
    `internal/otpauth`.
-4. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8** release CI.
-5. When the pack release exists, wire `make fetch-pack` + a CI job and pin the
-   pack version; add digests to `values-installer.yaml` (NAS-022).
+4. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8b** Tauri per-OS
+   bundles (engine release CI, I8a, is done).
+5. Create the `INSTALLER_DISPATCH_TOKEN` secret **and** tag Naslos-Linux
+   `vX.Y.Z` so the `install-pack` workflow publishes a pack and dispatches the
+   installer. Then add image digests to `values-installer.yaml` (NAS-022).
 
 ## Conventions / gates
 
