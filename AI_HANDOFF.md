@@ -38,6 +38,7 @@ Tauri sidecar. Nothing here touches a node without the user's inputs.
 | `internal/talosconfig` | persist/reuse Talos secrets bundle (never re-key), generate control plane from the pack patch via `pkg/machinery`, skip `UnattendedInstallConfig`, fill talosconfig endpoints | unit tests + parity vs `talosctl gen config` |
 | `internal/talosclient` | maintenance-mode client: apply / wait-for-API / bootstrap / kubeconfig / service states; already-bootstrapped = success | unit tests (fake API) |
 | `internal/k8s` | server-side apply of pack manifests (discovery-backed dynamic client), namespace label merge, default StorageClass annotation, Deployment/DaemonSet ready waits | unit tests (recording dynamic client) |
+| `desktop/` | Tauri v2 shell + Svelte 5 wizard: sidecar spawn/stream/cancel, input → confirm → progress/log → 2FA/QR + recovery-ZIP handoff, error/retry; browser preview with a simulated engine | svelte-check + vite build; `cargo build`; wizard driven end-to-end in a headless browser |
 
 `cmd/naslos-install` runs: validate → load/verify pack → preflight (skipped in
 dry-run) → render machine config → generate Talos config → maintenance Dial →
@@ -50,19 +51,46 @@ the real flow fails closed at the `helm` step.
 
 - The Talos + Kubernetes lifecycle is **not live-drilled**: the network halves
   need a freshly-booted node (see next steps).
-- Helm install, admin creation, TOTP bootstrap, resolver, recovery ZIP and the
-  Tauri shell are all still to do (see the plan). After local-path the engine
-  fails closed at the `helm` step. CI (I8a) is done — see below.
+- Helm install, admin creation, TOTP bootstrap, resolver and recovery ZIP are
+  still to do (see the plan). After local-path the engine fails closed at the
+  `helm` step. The desktop GUI (I7) and CI (I8a) are done — see below.
+- The GUI is **not launched on a real display** in this environment (no X
+  server) and **not bundled per OS** (I8b). It was verified by building the
+  Tauri app and driving the built wizard with a headless browser; the engine it
+  drives still stops at `helm`, so a real install reaches the progress screen,
+  not the handoff.
 - The Traefik CRDs are **not** applied by the engine: they ship in the traefik
   subchart's `crds/` directory and Helm installs them before the chart's Traefik
   custom resources (confirmed with `helm template --include-crds`). Re-check if
   the subchart's CRD packaging ever changes.
 
+## Desktop GUI (I7, added 2026-09-29)
+
+- `desktop/` is the Tauri project root; `desktop/ui/` is the Svelte 5 + Vite +
+  Tailwind wizard and `desktop/src-tauri/` is the Rust shell. `desktop/README.md`
+  has the dev/build commands.
+- The shell spawns the engine as the `naslos-install` sidecar
+  (`scripts/build-sidecar.sh` writes `src-tauri/binaries/naslos-install-<triple>`),
+  emits `install://stdout` / `install://stderr` / `install://exit`, and kills it
+  on `cancel_install`. It defines every engine argument; the webview never
+  supplies a shell string (SEC-1).
+- The wizard reads the engine's NDJSON. It uses the optional `data` payload
+  (contract §5: `totp` → `otpauth`/`secret`, `archive` → `path`, `done` →
+  `loginUrl`) with a `msg`-scan fallback; `internal/event` gained the `Data`
+  field and `ProgressData` so the engine can emit it.
+- `npm run dev` serves the wizard in a browser with a **simulated** engine for
+  UI work without Rust; `npm run tauri dev` opens the real window.
+- Verified: `npm run check` + `npm run build` clean; `cargo build` and
+  `npm run tauri build -- --no-bundle` succeed; the wizard flow was driven with
+  Playwright (screenshots of form → confirm → progress → handoff). Not run on a
+  real display and not bundled per OS (I8b).
+
 ## CI & release (I8a, added 2026-09-27)
 
 - **`ci.yml`** — `make check` on push/PR; a second job resolves the newest
-  Naslos-Linux `vX.Y.Z` tag, fetches that pack and runs `make build`. If no
-  semver tag exists yet the pack job warns and skips instead of failing.
+  Naslos-Linux `vX.Y.Z` tag, fetches that pack and runs `make build`; a third
+  (`desktop`) builds/type-checks the wizard and `cargo check`s the Tauri shell.
+  If no semver tag exists yet the pack job warns and skips instead of failing.
 - **`release.yml`** — on installer `v*` tag, `workflow_dispatch` (optional
   `naslos_version` input) and `repository_dispatch: naslos-release`. It resolves
   the newest Naslos-Linux `vX.Y.Z` tag, fetches + verifies the pack, cross-builds
