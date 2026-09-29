@@ -30,13 +30,16 @@ type Error struct {
 }
 
 // Event is one line of the progress stream. Exactly one of Error or the
-// step/status fields is set.
+// step/status fields is set. Data carries step-specific machine-readable values
+// for the shell (the contract's optional object): the otpauth URI and secret on
+// the `totp` step, the recovery ZIP path on `archive`, the login URL on `done`.
 type Event struct {
-	Step   string `json:"step,omitempty"`
-	Status Status `json:"status,omitempty"`
-	Pct    *int   `json:"pct,omitempty"`
-	Msg    string `json:"msg,omitempty"`
-	Error  *Error `json:"error,omitempty"`
+	Step   string            `json:"step,omitempty"`
+	Status Status            `json:"status,omitempty"`
+	Pct    *int              `json:"pct,omitempty"`
+	Msg    string            `json:"msg,omitempty"`
+	Data   map[string]string `json:"data,omitempty"`
+	Error  *Error            `json:"error,omitempty"`
 }
 
 // Emitter serialises events to a writer, one JSON object per line.
@@ -64,6 +67,13 @@ func (e *Emitter) emit(ev Event) error {
 // Progress emits a step update.
 func (e *Emitter) Progress(step string, status Status, pct int, msg string) error {
 	return e.emit(Event{Step: step, Status: status, Pct: &pct, Msg: msg})
+}
+
+// ProgressData emits a step update with a step-specific machine-readable
+// payload (docs/installer-contract.md §5), e.g. the otpauth URI on the `totp`
+// step or the recovery ZIP path on `archive`.
+func (e *Emitter) ProgressData(step string, status Status, pct int, msg string, data map[string]string) error {
+	return e.emit(Event{Step: step, Status: status, Pct: &pct, Msg: msg, Data: data})
 }
 
 // Step emits a running update at the given percentage.

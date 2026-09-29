@@ -44,6 +44,27 @@ func TestProtocolIsOneJSONObjectPerLine(t *testing.T) {
 	}
 }
 
+func TestProgressDataCarriesStepPayload(t *testing.T) {
+	var buf bytes.Buffer
+	em := New(&buf)
+
+	uri := "otpauth://totp/naslos.local:admin?secret=JBSWY3DPEHPK3PXP"
+	if err := em.ProgressData("totp", Running, 94, "Scan this code", map[string]string{
+		"otpauth": uri,
+		"secret":  "JBSWY3DPEHPK3PXP",
+	}); err != nil {
+		t.Fatalf("ProgressData: %v", err)
+	}
+
+	var ev Event
+	if err := json.Unmarshal([]byte(strings.TrimSpace(buf.String())), &ev); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if ev.Step != "totp" || ev.Data["otpauth"] != uri {
+		t.Fatalf("unexpected data event: %+v", ev)
+	}
+}
+
 func TestFailEmitsErrorEventAndReturnsError(t *testing.T) {
 	var buf bytes.Buffer
 	em := New(&buf)
