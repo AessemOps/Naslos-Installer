@@ -66,9 +66,16 @@ bundled as a Tauri sidecar.
   (marked line, always show the fallback record); recovery ZIP with
   talosconfig/controlplane/secrets bundle/kubeconfig/schematic/ISO.md/README.txt
   (no admin password; warn that `buddy-identity.json` is the backup KEK).
-- [ ] **I7 — Tauri v2 shell + Svelte wizard.** Input → confirm → progress/log →
-  2FA/QR → ZIP/first-login; sidecar wiring; per-OS bundles (AppImage + deb/rpm,
-  .dmg/.app, .msi/.exe).
+- [x] **I7 — Tauri v2 shell + Svelte wizard.** `desktop/` (Tauri root) with
+  `src-tauri/` (spawns the `naslos-install` sidecar, forwards NDJSON as
+  `install://stdout`/`stderr`/`exit`, kills on `cancel_install`) and `ui/`
+  (Svelte 5 + Vite + Tailwind: input → confirm → progress bar + log + cancel →
+  2FA/QR + recovery-ZIP handoff; error screen with retry). Browser preview runs
+  a simulated engine. `scripts/build-sidecar.sh` builds the sidecar; `ci.yml`
+  has a `desktop` job (svelte-check + build + `cargo check`). Plan:
+  `desktop-gui.md`. **Not yet bundled per OS (I8b) and not launched on a real
+  display (no X server in this environment) — the wizard was verified by
+  driving the built UI with a headless browser.**
 - [x] **I8a — Engine release CI.** `.github/workflows/ci.yml` (`make check` +
   pack build) and `release.yml` (cross-build linux/darwin/windows amd64+arm64,
   per-file sha256, GitHub release). Builds always embed the newest Naslos-Linux
@@ -77,9 +84,8 @@ bundled as a Tauri sidecar.
   `metadata.json`. Naslos-Linux's `install-pack` workflow sends a
   `repository_dispatch` (`naslos-release`) so a new pack rebuilds the installer
   automatically. Plan: `installer-ci-release.md`.
-- [ ] **I8b — Tauri bundles.** Once the shell exists (I7), run `tauri build` per
-  OS and attach AppImage/deb/rpm, .dmg/.app and .msi/.exe alongside the engine
-  binaries.
+- [ ] **I8b — Tauri bundles.** Run `tauri build` per OS and attach
+  AppImage/deb/rpm, .dmg/.app and .msi/.exe alongside the engine binaries.
 
 ## Spike results
 
