@@ -21,6 +21,8 @@
 /desktop/ui/dist/
 /desktop/src-tauri/target/
 /desktop/src-tauri/gen/
+# Built engine sidecars (scripts/build-sidecar.sh); not source.
+/desktop/src-tauri/binaries/
 
 # Local state / credentials
 ui/.env.local

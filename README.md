@@ -33,8 +33,9 @@ internal/talosclient      Talos lifecycle (apply-config/bootstrap/kubeconfig)
 internal/talosconfig      PKI + machine-config/talosconfig generation (machinery)
 installpack/              go:embed target (gitignored; populated by fetch)
 scripts/fetch-install-pack.sh
-.github/workflows/       ci.yml (test + pack build) and release.yml (per-OS)
-desktop/                  Tauri v2 shell + Svelte wizard (next increment)
+scripts/build-sidecar.sh  build the engine into the Tauri sidecar path
+.github/workflows/       ci.yml (test + pack + desktop) and release.yml
+desktop/                  Tauri v2 shell (src-tauri/) + Svelte 5 wizard (ui/)
 ```
 
 ## Build & test
@@ -55,10 +56,25 @@ dist/naslos-install \
   --dry-run
 ```
 
+## Desktop app
+
+`desktop/` is the Tauri v2 shell around the engine with a Svelte 5 wizard
+(input → confirm → progress bar + log → 2FA/QR handoff → recovery ZIP). The
+shell spawns `naslos-install` as a sidecar and streams its NDJSON progress to the
+window. See [`desktop/README.md`](desktop/README.md).
+
+```bash
+./scripts/build-sidecar.sh        # build the engine the shell spawns
+cd desktop && npm install
+npm run tauri dev                 # the desktop window
+npm run dev                       # browser preview (simulated engine)
+```
+
 ## CI & releases
 
-- `ci.yml` runs `make check` on every push/PR and, when a Naslos-Linux `vX.Y.Z`
-  release exists, fetches it and builds the engine against the embedded pack.
+- `ci.yml` runs `make check` on every push/PR, fetches the newest Naslos-Linux
+  `vX.Y.Z` pack and builds against it, and type-checks/builds the wizard and
+  `cargo check`s the Tauri shell.
 - `release.yml` builds `linux`/`darwin`/`windows` (amd64 + arm64), packages each
   binary with per-file sha256 checksums, and publishes a GitHub release. It runs
   on an installer `v*` tag, on manual dispatch (with an optional
@@ -66,23 +82,26 @@ dist/naslos-install \
   Naslos-Linux sends when it publishes a pack. Every build embeds the newest
   Naslos-Linux `vX.Y.Z` tag and derives `ExpectedTalosVersion` /
   `ExpectedSchematicID` from that pack, so the FR-INSTALL-02 gate always matches.
+  Tauri `.AppImage`/`.deb`/`.rpm`, `.dmg`/`.app` and `.msi`/`.exe` bundles are
+  the next release increment (I8b).
 
 ## Status
 
 Implemented: inputs/validation, pack load + checksum verification + version
 gate, machine-config rendering, node preflight, resumable state, NDJSON
-progress, Talos PKI + control-plane/talosconfig generation via
+progress/`data` payloads, Talos PKI + control-plane/talosconfig generation via
 `siderolabs/talos/pkg/machinery` (persisted secrets bundle; reuse never re-keys
 a node), the Talos lifecycle (maintenance apply → wait → bootstrap →
-kubeconfig), and the cluster storage step (startup CNI wait, local-path
-provisioner server-side apply, PodSecurity label, default StorageClass). The
-generated control plane matches `talosctl gen config` on the pack patch (install
-image, Cilium inline manifest, kube-proxy/flannel disabled, host-DNS,
-`KubeNodeConfig`).
+kubeconfig), the cluster storage step (startup CNI wait, local-path provisioner
+server-side apply, PodSecurity label, default StorageClass), and the desktop
+GUI (Tauri v2 shell + Svelte wizard, verified against a simulated engine in a
+browser). The generated control plane matches `talosctl gen config` on the pack
+patch (install image, Cilium inline manifest, kube-proxy/flannel disabled,
+host-DNS, `KubeNodeConfig`).
 
 Next increments (see `.kilo/plans/desktop-installer-app.md`): Helm install from
 the pack, admin + TOTP bootstrap, resolver hosts entry, recovery ZIP, then the
-Tauri shell and per-OS bundles.
+per-OS Tauri bundles (I8b).
 
 ## License
 
