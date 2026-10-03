@@ -38,25 +38,33 @@ bundled as a Tauri sidecar.
   (verified with `helm template --include-crds`). Wired into `cmd/naslos-install`;
   unit-tested with a recording dynamic client (the client-go dynamic fake cannot
   server-side apply unstructured objects).
-- [ ] **I4 — Helm install.** Install the pack's chart with `values-installer.yaml`
-  + engine overrides (domain, discovery name, CIDRs, `openldap.host`) via
-  `helm.sh/helm/v3`; wait on Deployments/StatefulSets. Notes from the VM install
-  path (`Naslos-Linux/scripts/deploy-vm.sh`, `make install-vm`):
+- [x] **I4 — Helm install (live-validated 2026-10-03).** `internal/helm` installs
+  the pack's chart with `values.yaml` → `values-installer.yaml` → engine
+  overrides (domain, discovery name, CIDRs, `openldap.host`) via
+  `helm.sh/helm/v3`, and the engine pre-creates `naslos` + the
+  `naslos-talosconfig` Secret before the install. Two SDK details found live:
+  the authelia subchart's schema has an offline external `$ref` (so
+  `SkipSchemaValidation`), and Helm `Wait` must stay **off** because the
+  OpenLDAP bootstrap is a post-install hook Authelia depends on (waiting
+  deadlocks); the engine runs the hook then waits for OpenLDAP, Authelia, API and
+  UI itself. Deployed live: release `naslos` `deployed`, all pods Running, `/`
+  → 401 to Authelia, `/authelia/` 200, `/api/health` 200.
+  Notes from the VM install path (`Naslos-Linux/scripts/deploy-vm.sh`,
+  `make install-vm`):
   - **CRDs.** The VM path runs `make crds` (`helm show crds traefik | kubectl
     apply`, cert-manager rendered from its `templates/crds.yaml`) and then passes
-    `--skip-crds`. The install pack ships **no** CRDs, so the engine must either
-    let Helm install the traefik subchart's `crds/` (i.e. do **not** pass
-    `--skip-crds`) or pre-apply them itself. `certManager.enabled` /
-    `ovhWebhook.enabled` are `false` in `values-installer.yaml`.
+    `--skip-crds`. The install pack ships **no** CRDs, so the engine lets Helm
+    install the traefik subchart's `crds/` (it does **not** pass `--skip-crds`).
+    `certManager.enabled` / `ovhWebhook.enabled` are `false` in
+    `values-installer.yaml`.
   - **`naslos` namespace + `naslos-talosconfig`.** The chart has no template for
-    the Secret `api.talosConfigSecret` mounts, so the engine must create the
+    the Secret `api.talosConfigSecret` mounts, so the engine creates the
     `naslos` namespace and the `naslos-talosconfig` Secret from the generated
-    talosconfig (endpoints already filled) **before** the Helm install, then
-    adopt the pre-created namespace (`--take-ownership`, mirroring deploy-vm.sh).
-  - **Helm version.** The repo CLI is Helm 4 (server-side apply; that is what the
-    `--force-conflicts`/`--take-ownership` comments refer to) while the Go module
-    cache has `helm.sh/helm/v3` v3.18.5. Pick one deliberately and pin it; do not
-    assume the v3 SDK's apply semantics match Helm 4.
+    talosconfig (endpoints already filled) **before** the Helm install, and
+    adopts the pre-created namespace (`TakeOwnership`, mirroring deploy-vm.sh).
+  - **Helm version.** The repo CLI is Helm 4 while the Go SDK used is
+    `helm.sh/helm/v3` v3.18.5. Pinned deliberately; the v3 SDK's client-side
+    apply is what the live validation exercised.
 - [ ] **I5 — Bootstrap admin + TOTP.** Exec `curl` into `deploy/naslos-terminal`
   to `POST /api/users` (owner headers from the `naslos-proxy` Secret), verify
   with `GET /api/users`; exec `authelia storage user totp generate <uid> --issuer
