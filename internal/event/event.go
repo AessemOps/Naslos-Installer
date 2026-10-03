@@ -86,6 +86,12 @@ func (e *Emitter) Done(msg string) error {
 	return e.emit(Event{Step: "done", Status: OK, Pct: intPtr(100), Msg: msg})
 }
 
+// DoneData is Done with a machine-readable payload (contract §5), e.g. the
+// login URL the shell shows on the handoff screen.
+func (e *Emitter) DoneData(msg string, data map[string]string) error {
+	return e.emit(Event{Step: "done", Status: OK, Pct: intPtr(100), Msg: msg, Data: data})
+}
+
 // Fail emits the terminal error event and returns an error carrying the same
 // message, so the caller can simply `return em.Fail(...)`.
 func (e *Emitter) Fail(step, msg, output string) error {
