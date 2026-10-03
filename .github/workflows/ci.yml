@@ -44,6 +44,12 @@ jobs:
       - name: Build against the embedded pack
         if: steps.fetch.outputs.skip != 'true'
         run: make build
+      # Verifies the embedded pack's own member checksums. This is the regression
+      # guard for the embed pattern (a `_`-prefixed chart file was dropped by
+      # `//go:embed *` and only the fetched pack exposes it).
+      - name: Verify the embedded pack
+        if: steps.fetch.outputs.skip != 'true'
+        run: go test ./internal/installpack/... -run TestEmbeddedPackVerifies -v
       - name: Show the embedded pack identity
         if: steps.fetch.outputs.skip != 'true'
         run: |
