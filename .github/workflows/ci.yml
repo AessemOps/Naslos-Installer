@@ -85,6 +85,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      # The sidecar embeds the pack; fetch it best-effort so the shell is built
+      # against the real artifact (skips cleanly if no vX.Y.Z release exists).
+      - name: Fetch the latest install pack
+        run: ./scripts/fetch-install-pack.sh || echo "no pack release yet; using the pinned fallback"
       - name: Build the engine sidecar
         run: scripts/build-sidecar.sh
       - name: Check the Tauri shell
