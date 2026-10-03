@@ -1,0 +1,81 @@
+# Build installable desktop bundles (I8b) for the Linux GUI and Windows targets.
+#
+# The Linux bundles are built on ubuntu-22.04 on purpose: an AppImage built
+# against an older glibc runs on newer distributions (the test VM is Fedora 44).
+# The engine sidecar is built per target by scripts/build-sidecar.sh. Artifacts
+# are uploaded (not attached to a release) so they can be installed on the test
+# VMs; the release wiring is a later step.
+name: bundle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            goos: linux
+            goarch: amd64
+            bundles: appimage,deb
+            artifact: naslos-installer-linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            goos: windows
+            goarch: amd64
+            bundles: nsis
+            artifact: naslos-installer-windows-x86_64
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          targets: ${{ matrix.target }}
+      # Tauri v2 Linux deps + the AppImage runtime (libfuse2) and `file`.
+      - name: Install Tauri Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2 file
+      - name: Fetch the install pack
+        shell: bash
+        run: ./scripts/fetch-install-pack.sh
+      - name: Build the engine sidecar
+        shell: bash
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: ./scripts/build-sidecar.sh
+      - name: Install the UI dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Build the bundles
+        working-directory: desktop
+        run: npm run tauri -- build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**
+            !**/*.dSYM
