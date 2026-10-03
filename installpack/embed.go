@@ -11,5 +11,10 @@ import "embed"
 
 // FS is the embedded pack root (metadata.json, charts/, machine-config/, ...).
 //
-//go:embed *
+// `all:` is required: Go's embed otherwise skips files and directories whose
+// names begin with `_` or `.`, which silently drops Helm's
+// charts/naslos/templates/_helpers.tpl and makes the pack fail its own
+// checksum verification (found in the live drill).
+//
+//go:embed all:*
 var FS embed.FS
