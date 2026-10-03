@@ -25,6 +25,7 @@ import (
 	embeddedpack "github.com/AessemOps/Naslos-Installer/installpack"
 	"github.com/AessemOps/Naslos-Installer/internal/config"
 	"github.com/AessemOps/Naslos-Installer/internal/event"
+	"github.com/AessemOps/Naslos-Installer/internal/helm"
 	"github.com/AessemOps/Naslos-Installer/internal/installpack"
 	"github.com/AessemOps/Naslos-Installer/internal/k8s"
 	"github.com/AessemOps/Naslos-Installer/internal/preflight"
@@ -316,12 +317,79 @@ func run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	// Helm install, admin + TOTP, resolver and the recovery ZIP are the next
-	// increments. The Traefik CRDs are not applied here: they ship in the
-	// traefik subchart's crds/ directory and Helm installs them before the
-	// chart's Traefik custom resources (verified with `helm template --include-crds`).
-	return em.Fail("helm", "Helm install is not implemented in this build",
-		fmt.Sprintf("storage is ready; kubeconfig at %s", kubeconfigPath))
+	// --- milestone 5: deploy Naslos from the pack's chart ---
+	// The API pod mounts the naslos-talosconfig Secret, and the chart has no
+	// template for it, so the engine pre-creates the namespace and the Secret
+	// (from the generated talosconfig, endpoints filled) before Helm runs.
+	if err := em.Step("helm", "Deploying Naslos", 82); err != nil {
+		return err
+	}
+	chartTmp, err := os.MkdirTemp("", "naslos-chart-")
+	if err != nil {
+		return em.Fail("helm", "cannot create a temp dir for the chart", err.Error())
+	}
+	defer os.RemoveAll(chartTmp)
+	if err := pack.Extract(chartTmp); err != nil {
+		return em.Fail("helm", "cannot extract the install pack", err.Error())
+	}
+
+	if err := cluster.EnsureNamespace(ctx, "naslos", map[string]string{
+		"pod-security.kubernetes.io/enforce":         "privileged",
+		"pod-security.kubernetes.io/enforce-version": "latest",
+	}); err != nil {
+		return em.Fail("helm", "cannot create the naslos namespace", err.Error())
+	}
+	if err := cluster.UpsertSecret(ctx, "naslos", "naslos-talosconfig",
+		map[string][]byte{"talosconfig": gen.Talosconfig}, nil); err != nil {
+		return em.Fail("helm", "cannot write the naslos-talosconfig Secret", err.Error())
+	}
+
+	chartDir := filepath.Join(chartTmp, "charts", "naslos")
+	overrides := helm.Overrides(
+		opts.input.NormalizedDomain(),
+		opts.input.ShortName(),
+		subnet,
+		"naslos-talosconfig",
+	)
+	if err := helm.Install(ctx, helm.Options{
+		KubeconfigPath: kubeconfigPath,
+		ChartDir:       chartDir,
+		Release:        "naslos",
+		Namespace:      "naslos",
+		ValueFiles: []string{
+			filepath.Join(chartDir, "values.yaml"),
+			filepath.Join(chartDir, "values-installer.yaml"),
+		},
+		Overrides: overrides,
+		Timeout:   10 * time.Minute,
+	}); err != nil {
+		return em.Fail("helm", "the Naslos chart install failed", err.Error())
+	}
+	// Helm does not wait (see internal/helm), so wait for the core workloads.
+	if err := cluster.WaitForStatefulSet(ctx, "naslos", "naslos-openldap", 5*time.Minute); err != nil {
+		return em.Fail("helm", "OpenLDAP did not become ready", err.Error())
+	}
+	if err := cluster.WaitForStatefulSet(ctx, "naslos", "naslos-authelia", 5*time.Minute); err != nil {
+		return em.Fail("helm", "Authelia did not become ready", err.Error())
+	}
+	if err := cluster.WaitForDeployment(ctx, "naslos", "naslos-api", 5*time.Minute); err != nil {
+		return em.Fail("helm", "the API did not become ready", err.Error())
+	}
+	if err := cluster.WaitForDeployment(ctx, "naslos", "naslos-ui", 5*time.Minute); err != nil {
+		return em.Fail("helm", "the UI did not become ready", err.Error())
+	}
+	st.SetStep("helm", state.Done, "Naslos deployed")
+	if err := st.Save(statePath); err != nil {
+		return em.Fail("state", "cannot persist install state", err.Error())
+	}
+	if err := em.Step("helm", "Naslos deployed", 88); err != nil {
+		return err
+	}
+
+	// Admin creation, TOTP, resolver and the recovery ZIP are the next
+	// increments.
+	return em.Fail("admin", "admin and two-factor bootstrap are not implemented in this build",
+		fmt.Sprintf("Naslos is deployed; kubeconfig at %s", kubeconfigPath))
 }
 
 const installDisk = "/dev/vda"

@@ -37,12 +37,23 @@ with the published `v0.1.0` pack:
 ```
 
 Steps config → pack → preflight → machine-config → talos-config →
-talos-install → bootstrap → kubeconfig → cni → storage all succeeded; the engine
-stopped at `helm` (I4 not implemented). Verified with the fetched kubeconfig:
-node `talos-6r3-5y2` **Ready** at Talos v1.14.1 / k8s v1.37.0, Cilium + CoreDNS
-Running, StorageClass `local-path (default)`, `local-path-provisioner` 1/1
-Running, namespace `local-path-storage` labeled
+talos-install → bootstrap → kubeconfig → cni → storage all succeeded. Verified
+with the fetched kubeconfig: node `talos-6r3-5y2` **Ready** at Talos v1.14.1 /
+k8s v1.37.0, Cilium + CoreDNS Running, StorageClass `local-path (default)`,
+`local-path-provisioner` 1/1 Running, namespace `local-path-storage` labeled
 `pod-security.kubernetes.io/enforce=privileged`.
+
+**I4 (Helm) then validated against the same cluster** (branch
+`feat/engine-helm-install`): `internal/helm` extracted the pack chart, merged
+`values.yaml` → `values-installer.yaml` → engine overrides, pre-created the
+`naslos` namespace + `naslos-talosconfig` Secret, and installed release `naslos`
+(Helm revision 2, `deployed`). Live result: all pods Running, `/` → 401
+redirect to Authelia, `/authelia/` → 200, `/api/health` → 200. Two SDK details
+mattered: `SkipSchemaValidation` (the authelia subchart's schema has an offline
+external `$ref`) and **not** using Helm `Wait` — the OpenLDAP bootstrap is a
+post-install hook, so waiting on Authelia before the hook runs deadlocks; the
+engine now runs the hook and waits for the workloads itself. The engine then
+stops at the `admin` step (I5).
 
 **Bug found and fixed in the same drill:** `//go:embed *` in
 `installpack/embed.go` silently drops files whose names begin with `_` or `.`,
@@ -78,20 +89,18 @@ dry-run) → render machine config → generate Talos config → maintenance Dia
 Apply → authenticated Dial → Bootstrap → services → kubeconfig → wait for the
 Cilium DaemonSet → apply local-path + PSA label + default StorageClass →
 provisioner ready, streaming NDJSON. `--dry-run` stops after config generation;
-the real flow fails closed at the `helm` step.
+the real flow runs through the Helm install and fails closed at the `admin` step.
 
 ### Not implemented / not wired
 
-- The Talos + Kubernetes lifecycle is **not live-drilled**: the network halves
-  need a freshly-booted node (see next steps).
-- Helm install, admin creation, TOTP bootstrap, resolver and recovery ZIP are
-  still to do (see the plan). After local-path the engine fails closed at the
-  `helm` step. The desktop GUI (I7) and CI (I8a) are done — see below.
-- The GUI is **not launched on a real display** in this environment (no X
-  server) and **not bundled per OS** (I8b). It was verified by building the
-  Tauri app and driving the built wizard with a headless browser; the engine it
-  drives still stops at `helm`, so a real install reaches the progress screen,
-  not the handoff.
+- The Talos + Kubernetes lifecycle **was live-drilled on 2026-10-03** (see the
+  drill section above) through the Helm install; admin/TOTP, resolver and the
+  recovery ZIP are still to do, so the real flow fails closed at `admin`.
+- The desktop GUI (I7) and CI (I8a) are done — see below.
+- The GUI is **not launched on a real display** in this environment and **not
+  bundled per OS** (I8b). It was verified by building the Tauri app and driving
+  the built wizard with a headless browser; the engine it drives now reaches the
+  Naslos deploy, then stops at `admin` (no handoff screen yet).
 - The Traefik CRDs are **not** applied by the engine: they ship in the traefik
   subchart's `crds/` directory and Helm installs them before the chart's Traefik
   custom resources (confirmed with `helm template --include-crds`). Re-check if
@@ -209,23 +218,14 @@ go run ./cmd/naslos-install \
 
 ## Next steps (in order)
 
-1. **Live drill (I2b + I3)**: validate the Talos lifecycle and the storage step
-   on a freshly-booted node (wipe `/dev/vda` from the ISO). Do **not** point it
-   at the installed `192.168.1.117` production node. Confirm the Cilium wait,
-   `local-path` apply + default class, and that the engine stops cleanly at
-   `helm`.
-2. **I4** Helm: install the pack chart with `values-installer.yaml` + overrides
-   (domain, `shares.discovery.name`, `openldap.host`, `networkPolicy.*` CIDRs)
-   via `helm.sh/helm/v3`; wait on Deployments/StatefulSets. Helm installs the
-   Traefik CRDs from the subchart's `crds/` before the chart's Traefik CRs.
-3. **I5** admin + TOTP: `remotecommand.Exec` into `deploy/naslos-terminal`
+1. **I5** admin + TOTP: `remotecommand.Exec` into `deploy/naslos-terminal`
    (`naslos-privileged`) with `Remote-User`/`Remote-Groups`/
    `X-Naslos-Proxy-Secret` (read `naslos-proxy`) to `POST /api/users`, then
    `authelia storage user totp generate` in `naslos-authelia-0` and parse with
    `internal/otpauth`.
-4. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8b** Tauri per-OS
+2. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8b** Tauri per-OS
    bundles (engine release CI, I8a, is done).
-5. Create the `INSTALLER_DISPATCH_TOKEN` secret **and** tag Naslos-Linux
+3. Create the `INSTALLER_DISPATCH_TOKEN` secret **and** tag Naslos-Linux
    `vX.Y.Z` so the `install-pack` workflow publishes a pack and dispatches the
    installer. Then add image digests to `values-installer.yaml` (NAS-022).
 
