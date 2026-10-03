@@ -23,6 +23,7 @@ import (
 	"time"
 
 	embeddedpack "github.com/AessemOps/Naslos-Installer/installpack"
+	"github.com/AessemOps/Naslos-Installer/internal/archive"
 	"github.com/AessemOps/Naslos-Installer/internal/bootstrap"
 	"github.com/AessemOps/Naslos-Installer/internal/config"
 	"github.com/AessemOps/Naslos-Installer/internal/event"
@@ -30,6 +31,7 @@ import (
 	"github.com/AessemOps/Naslos-Installer/internal/installpack"
 	"github.com/AessemOps/Naslos-Installer/internal/k8s"
 	"github.com/AessemOps/Naslos-Installer/internal/preflight"
+	"github.com/AessemOps/Naslos-Installer/internal/resolver"
 	"github.com/AessemOps/Naslos-Installer/internal/state"
 	"github.com/AessemOps/Naslos-Installer/internal/talosclient"
 	"github.com/AessemOps/Naslos-Installer/internal/talosconfig"
@@ -437,10 +439,72 @@ func run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	// The resolver hosts entry and the recovery ZIP are the next increment.
-	return em.Fail("resolver", "the resolver and recovery ZIP are not implemented in this build",
-		fmt.Sprintf("Naslos is deployed and %s has a TOTP device; kubeconfig at %s",
-			opts.input.AdminUser, kubeconfigPath))
+	// --- milestone 7: local name + recovery ZIP ---
+	hostsLine := resolver.Line(opts.input.NodeIP, opts.input.NormalizedDomain())
+	if err := em.Step("resolver", "Adding the local hosts entry", 95); err != nil {
+		return err
+	}
+	switch {
+	case !opts.input.AddResolver:
+		if err := em.Progress("resolver", event.Running, 96,
+			"Add this to your hosts file (or DNS): "+hostsLine); err != nil {
+			return err
+		}
+	case resolver.Install("/etc/hosts", opts.input.NodeIP, opts.input.NormalizedDomain()) != nil:
+		// Best effort: the fallback line is always shown.
+		if err := em.Progress("resolver", event.Running, 96,
+			"Could not edit the hosts file; add this line manually: "+hostsLine); err != nil {
+			return err
+		}
+	default:
+		if err := em.Progress("resolver", event.Running, 96, "Added the hosts entry: "+hostsLine); err != nil {
+			return err
+		}
+	}
+	st.SetStep("resolver", state.Done, hostsLine)
+
+	if err := em.Step("archive", "Writing the recovery ZIP", 97); err != nil {
+		return err
+	}
+	outDir, err := os.UserHomeDir()
+	if err != nil {
+		outDir = opts.stateDir
+	} else if downloads := filepath.Join(outDir, "Downloads"); dirExists(downloads) {
+		outDir = downloads
+	} else {
+		outDir = opts.stateDir
+	}
+	zipPath, err := archive.Build(archive.Options{
+		Dir:           outDir,
+		StateDir:      opts.stateDir,
+		Domain:        opts.input.NormalizedDomain(),
+		AdminUser:     opts.input.AdminUser,
+		LoginURL:      opts.input.AutheliaURL(),
+		NaslosVersion: pack.Metadata().NaslosVersion,
+		TalosVersion:  pack.Metadata().TalosVersion,
+		SchematicID:   pack.Metadata().SchematicID,
+		ISOURL:        pack.Metadata().ISOURL(),
+		ReadMember:    pack.ReadFile,
+	})
+	if err != nil {
+		return em.Fail("archive", "cannot write the recovery ZIP", err.Error())
+	}
+	st.SetStep("archive", state.Done, zipPath)
+	if err := st.Save(statePath); err != nil {
+		return em.Fail("state", "cannot persist install state", err.Error())
+	}
+	if err := em.ProgressData("archive", event.Running, 98, "Recovery ZIP written",
+		map[string]string{"path": zipPath}); err != nil {
+		return err
+	}
+
+	loginURL := opts.input.AutheliaURL()
+	return em.DoneData(loginURL, map[string]string{"loginUrl": loginURL})
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 const installDisk = "/dev/vda"

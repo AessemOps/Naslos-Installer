@@ -76,10 +76,16 @@ bundled as a Tauri sidecar.
   `POST /authelia/api/secondfactor/totp` (code from the CLI-generated secret) →
   200 with a redirect, so no web enrolment is needed. The engine then fails
   closed at the `resolver` step.
-- [ ] **I6 — Resolver + recovery ZIP.** Best-effort elevated hosts entry per OS
-  (marked line, always show the fallback record); recovery ZIP with
-  talosconfig/controlplane/secrets bundle/kubeconfig/schematic/ISO.md/README.txt
-  (no admin password; warn that `buddy-identity.json` is the backup KEK).
+- [x] **I6 — Resolver + recovery ZIP.** `internal/resolver` upserts/removes a
+  single marker-owned hosts line (`# naslos-installer`) and writes `/etc/hosts`,
+  returning a permission error the engine turns into a shown fallback line.
+  `internal/archive` builds `naslos-recovery-<domain>-<stamp>.zip`
+  (talosconfig, controlplane, talos-secrets.json, kubeconfig,
+  schematic/naslos.yaml, ISO.md, README.txt) — no admin password, with the
+  buddy-identity KEK warning. The engine finishes with a `done` event carrying
+  `data.loginUrl`. Live: the ZIP built from the real drill state dir with all
+  members. Elevation for the hosts write (pkexec/sudo/osascript/UAC) is
+  best-effort by design; the fallback line is always shown.
 - [x] **I7 — Tauri v2 shell + Svelte wizard.** `desktop/` (Tauri root) with
   `src-tauri/` (spawns the `naslos-install` sidecar, forwards NDJSON as
   `install://stdout`/`stderr`/`exit`, kills on `cancel_install`) and `ui/`
