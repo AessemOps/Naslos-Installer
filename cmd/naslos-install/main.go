@@ -23,6 +23,7 @@ import (
 	"time"
 
 	embeddedpack "github.com/AessemOps/Naslos-Installer/installpack"
+	"github.com/AessemOps/Naslos-Installer/internal/bootstrap"
 	"github.com/AessemOps/Naslos-Installer/internal/config"
 	"github.com/AessemOps/Naslos-Installer/internal/event"
 	"github.com/AessemOps/Naslos-Installer/internal/helm"
@@ -386,10 +387,60 @@ func run(args []string, stdout io.Writer) error {
 		return err
 	}
 
-	// Admin creation, TOTP, resolver and the recovery ZIP are the next
-	// increments.
-	return em.Fail("admin", "admin and two-factor bootstrap are not implemented in this build",
-		fmt.Sprintf("Naslos is deployed; kubeconfig at %s", kubeconfigPath))
+	// --- milestone 6: first administrator + TOTP ---
+	if err := em.Step("admin", "Creating the administrator", 90); err != nil {
+		return err
+	}
+	proxySecret, err := cluster.SecretValue(ctx, "naslos", "naslos-proxy", "secret")
+	if err != nil {
+		return em.Fail("admin", "cannot read the naslos-proxy secret", err.Error())
+	}
+	terminalPod, err := cluster.PodForDeployment(ctx, "naslos-privileged", "naslos-terminal")
+	if err != nil {
+		return em.Fail("admin", "cannot find the terminal pod", err.Error())
+	}
+	if err := bootstrap.CreateAdmin(ctx, cluster, bootstrap.AdminOptions{
+		UID:               opts.input.AdminUser,
+		Domain:            opts.input.NormalizedDomain(),
+		Password:          opts.input.AdminPassword,
+		ProxySecret:       proxySecret,
+		TerminalNamespace: "naslos-privileged",
+		TerminalPod:       terminalPod,
+		TerminalContainer: "shell",
+		APIURL:            "http://naslos-api.naslos.svc.cluster.local:8080",
+	}); err != nil {
+		return em.Fail("admin", "cannot create the administrator", err.Error())
+	}
+	st.SetStep("admin", state.Done, "administrator created")
+	if err := st.Save(statePath); err != nil {
+		return em.Fail("state", "cannot persist install state", err.Error())
+	}
+	if err := em.Step("admin", "Administrator created", 91); err != nil {
+		return err
+	}
+
+	if err := em.Step("totp", "Generating the two-factor device", 92); err != nil {
+		return err
+	}
+	otp, err := bootstrap.GenerateTOTP(ctx, cluster, "naslos", "naslos-authelia-0", "authelia",
+		opts.input.AdminUser, opts.input.NormalizedDomain())
+	if err != nil {
+		return em.Fail("totp", "cannot generate the TOTP device", err.Error())
+	}
+	st.SetStep("totp", state.Done, "TOTP device generated")
+	if err := st.Save(statePath); err != nil {
+		return em.Fail("state", "cannot persist install state", err.Error())
+	}
+	// The shell reads this machine-readable payload (contract §5).
+	if err := em.ProgressData("totp", event.Running, 94, "Scan this code with your authenticator",
+		map[string]string{"otpauth": otp.URI, "secret": otp.Secret}); err != nil {
+		return err
+	}
+
+	// The resolver hosts entry and the recovery ZIP are the next increment.
+	return em.Fail("resolver", "the resolver and recovery ZIP are not implemented in this build",
+		fmt.Sprintf("Naslos is deployed and %s has a TOTP device; kubeconfig at %s",
+			opts.input.AdminUser, kubeconfigPath))
 }
 
 const installDisk = "/dev/vda"

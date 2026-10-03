@@ -36,6 +36,7 @@ type Client struct {
 	dyn    dynamic.Interface
 	core   kubernetes.Interface
 	mapper meta.RESTMapper
+	rest   *rest.Config
 }
 
 // NewFromKubeconfig parses the fetched kubeconfig and builds a Client.
@@ -62,7 +63,7 @@ func New(cfg *rest.Config) (*Client, error) {
 		return nil, fmt.Errorf("creating the discovery client: %w", err)
 	}
 	mapper := restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disco))
-	return &Client{dyn: dyn, core: core, mapper: mapper}, nil
+	return &Client{dyn: dyn, core: core, mapper: mapper, rest: cfg}, nil
 }
 
 // NewWith builds a Client from explicit interfaces. Tests use it with the fake

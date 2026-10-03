@@ -65,11 +65,17 @@ bundled as a Tauri sidecar.
   - **Helm version.** The repo CLI is Helm 4 while the Go SDK used is
     `helm.sh/helm/v3` v3.18.5. Pinned deliberately; the v3 SDK's client-side
     apply is what the live validation exercised.
-- [ ] **I5 — Bootstrap admin + TOTP.** Exec `curl` into `deploy/naslos-terminal`
-  to `POST /api/users` (owner headers from the `naslos-proxy` Secret), verify
-  with `GET /api/users`; exec `authelia storage user totp generate <uid> --issuer
-  <domain>` in `naslos-authelia-0`, parse the `otpauth://` URI
-  (`internal/otpauth`), render a QR.
+- [x] **I5 — Bootstrap admin + TOTP (live-validated 2026-10-03).**
+  `internal/bootstrap` execs `curl` into `deploy/naslos-terminal` to
+  `POST /api/users` (owner headers + the `naslos-proxy` Secret's `secret` key),
+  verifies with `GET /api/users`, then execs `authelia storage user totp
+  generate <uid> --issuer <domain>` in `naslos-authelia-0` and parses the URI
+  with `internal/otpauth`. `internal/k8s` gained SPDY `Exec`, `SecretValue` and
+  `PodForDeployment`. Live: admin created, TOTP device generated, and the
+  spike passed — `POST /authelia/api/firstfactor` (LDAP password) → 200 and
+  `POST /authelia/api/secondfactor/totp` (code from the CLI-generated secret) →
+  200 with a redirect, so no web enrolment is needed. The engine then fails
+  closed at the `resolver` step.
 - [ ] **I6 — Resolver + recovery ZIP.** Best-effort elevated hosts entry per OS
   (marked line, always show the fallback record); recovery ZIP with
   talosconfig/controlplane/secrets bundle/kubeconfig/schematic/ISO.md/README.txt
