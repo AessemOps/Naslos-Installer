@@ -9,8 +9,6 @@ name: bundle
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ci/desktop-bundles]
 
 permissions:
   contents: read
