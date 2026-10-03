@@ -23,5 +23,7 @@ serde_json = "1"
 codegen-units = 1
 lto = true
 opt-level = "s"
-panic = "abort"
+# Do NOT set panic = "abort": it turns any panic during WebView2/Tauri init into
+# an opaque STATUS_STACK_BUFFER_OVERRUN (0xc0000409) crash on Windows with no
+# message (found on the Win11 test VM). Unwinding keeps a readable panic.
 strip = true
