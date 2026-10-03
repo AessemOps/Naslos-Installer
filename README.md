@@ -95,17 +95,17 @@ a node), the Talos lifecycle (maintenance apply → wait → bootstrap →
 kubeconfig), the cluster storage step (startup CNI wait, local-path provisioner
 server-side apply, PodSecurity label, default StorageClass), the Helm install of
 the pack's chart (values merge + engine overrides, pre-created `naslos` +
-`naslos-talosconfig` Secret, explicit workload waits), and the desktop GUI
-(Tauri v2 shell + Svelte wizard, verified against a simulated engine in a
-browser). The generated control plane matches `talosctl gen config` on the pack
-patch (install image, Cilium inline manifest, kube-proxy/flannel disabled,
-host-DNS, `KubeNodeConfig`). The whole path through the Helm install was
+`naslos-talosconfig` Secret, explicit workload waits), the first administrator +
+TOTP device (owner API via pod exec, `authelia … totp generate`), and the
+desktop GUI (Tauri v2 shell + Svelte wizard, verified against a simulated engine
+in a browser). The generated control plane matches `talosctl gen config` on the
+pack patch (install image, Cilium inline manifest, kube-proxy/flannel disabled,
+host-DNS, `KubeNodeConfig`). The whole path through admin + TOTP was
 live-validated on 2026-10-03 (Talos node Ready, Naslos pods Running, `/authelia/`
-200).
+200, and an Authelia firstfactor + CLI-generated TOTP login → 200).
 
-Next increments (see `.kilo/plans/desktop-installer-app.md`): admin + TOTP
-bootstrap, resolver hosts entry, recovery ZIP, then the per-OS Tauri bundles
-(I8b).
+Next increments (see `.kilo/plans/desktop-installer-app.md`): resolver hosts
+entry, recovery ZIP, then the per-OS Tauri bundles (I8b).
 
 ## License
 

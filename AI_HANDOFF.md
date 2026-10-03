@@ -55,6 +55,17 @@ post-install hook, so waiting on Authelia before the hook runs deadlocks; the
 engine now runs the hook and waits for the workloads itself. The engine then
 stops at the `admin` step (I5).
 
+**I5 (admin + TOTP) then validated against the same cluster** (branch
+`feat/engine-admin-totp`): `internal/bootstrap` created `admin` through the
+owner-gated API from `deploy/naslos-terminal` (proxy secret + owner headers,
+verified with `GET /api/users`) and generated the TOTP device with
+`authelia storage user totp generate admin --issuer naslos.local` in
+`naslos-authelia-0`. The contract's spike passed: `POST /authelia/api/firstfactor`
+(LDAP password) → 200 and `POST /authelia/api/secondfactor/totp` (code computed
+from the CLI-generated secret) → 200 with a redirect, so a CLI device works
+without web enrolment. `internal/k8s` gained SPDY `Exec`, `SecretValue` and
+`PodForDeployment`. The engine then stops at `resolver` (I6).
+
 **Bug found and fixed in the same drill:** `//go:embed *` in
 `installpack/embed.go` silently drops files whose names begin with `_` or `.`,
 so Helm's `charts/naslos/templates/_helpers.tpl` was missing from the embedded
@@ -81,7 +92,9 @@ before the namespace PSA label, so the first apply logs a non-fatal
 | `internal/state` | `state.json` (0600), resumable step status | unit tests |
 | `internal/talosconfig` | persist/reuse Talos secrets bundle (never re-key), generate control plane from the pack patch via `pkg/machinery`, skip `UnattendedInstallConfig`, fill talosconfig endpoints | unit tests + parity vs `talosctl gen config` |
 | `internal/talosclient` | maintenance-mode client: apply / wait-for-API / bootstrap / kubeconfig / service states; already-bootstrapped = success | unit tests (fake API) |
-| `internal/k8s` | server-side apply of pack manifests (discovery-backed dynamic client), namespace label merge, default StorageClass annotation, Deployment/DaemonSet ready waits | unit tests (recording dynamic client) |
+| `internal/k8s` | server-side apply of pack manifests (discovery-backed dynamic client), namespace label merge, default StorageClass annotation, Deployment/StatefulSet/DaemonSet ready waits, SPDY `Exec`, `SecretValue`, `PodForDeployment`, namespace/secret ensure | unit tests (recording dynamic client); exec/pod-resolution exercised live |
+| `internal/helm` | pack chart install: values merge + engine overrides, TakeOwnership, idempotent Upgrade, CRDs on | unit tests (values merge/overrides); live install validated |
+| `internal/bootstrap` | first admin via the owner API (exec `curl`) + TOTP device generation (`authelia … totp generate`) | unit tests (fake execer); live create + TOTP login validated |
 | `desktop/` | Tauri v2 shell + Svelte 5 wizard: sidecar spawn/stream/cancel, input → confirm → progress/log → 2FA/QR + recovery-ZIP handoff, error/retry; browser preview with a simulated engine | svelte-check + vite build; `cargo build`; wizard driven end-to-end in a headless browser |
 
 `cmd/naslos-install` runs: validate → load/verify pack → preflight (skipped in
@@ -94,8 +107,8 @@ the real flow runs through the Helm install and fails closed at the `admin` step
 ### Not implemented / not wired
 
 - The Talos + Kubernetes lifecycle **was live-drilled on 2026-10-03** (see the
-  drill section above) through the Helm install; admin/TOTP, resolver and the
-  recovery ZIP are still to do, so the real flow fails closed at `admin`.
+  drill section above) through admin + TOTP; the resolver hosts entry and the
+  recovery ZIP are still to do, so the real flow fails closed at `resolver`.
 - The desktop GUI (I7) and CI (I8a) are done — see below.
 - The GUI is **not launched on a real display** in this environment and **not
   bundled per OS** (I8b). It was verified by building the Tauri app and driving
@@ -218,16 +231,15 @@ go run ./cmd/naslos-install \
 
 ## Next steps (in order)
 
-1. **I5** admin + TOTP: `remotecommand.Exec` into `deploy/naslos-terminal`
-   (`naslos-privileged`) with `Remote-User`/`Remote-Groups`/
-   `X-Naslos-Proxy-Secret` (read `naslos-proxy`) to `POST /api/users`, then
-   `authelia storage user totp generate` in `naslos-authelia-0` and parse with
-   `internal/otpauth`.
-2. **I6** resolver + recovery ZIP; **I7** Tauri shell; **I8b** Tauri per-OS
-   bundles (engine release CI, I8a, is done).
-3. Create the `INSTALLER_DISPATCH_TOKEN` secret **and** tag Naslos-Linux
-   `vX.Y.Z` so the `install-pack` workflow publishes a pack and dispatches the
-   installer. Then add image digests to `values-installer.yaml` (NAS-022).
+1. **I6** resolver + recovery ZIP: best-effort elevated hosts entry per OS with
+   a fallback line, then the recovery ZIP (talosconfig/controlplane/secrets
+   bundle/kubeconfig/schematic/ISO.md/README.txt, no admin password, buddy-KEK
+   warning).
+2. **I8b** Tauri per-OS bundles (AppImage/deb/rpm, dmg/app, msi/exe); the engine
+   release CI (I8a) and the Tauri shell (I7) are done.
+3. Create the `INSTALLER_DISPATCH_TOKEN` secret (already needed on the
+   Naslos-Linux side) and keep the install pack released for the newest
+   `vX.Y.Z` tag. Then add image digests to `values-installer.yaml` (NAS-022).
 
 ## Conventions / gates
 
