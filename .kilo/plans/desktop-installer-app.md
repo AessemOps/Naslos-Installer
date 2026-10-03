@@ -73,9 +73,7 @@ bundled as a Tauri sidecar.
   2FA/QR + recovery-ZIP handoff; error screen with retry). Browser preview runs
   a simulated engine. `scripts/build-sidecar.sh` builds the sidecar; `ci.yml`
   has a `desktop` job (svelte-check + build + `cargo check`). Plan:
-  `desktop-gui.md`. **Not yet bundled per OS (I8b) and not launched on a real
-  display (no X server in this environment) — the wizard was verified by
-  driving the built UI with a headless browser.**
+  `desktop-gui.md`. Bundled and run on real displays (I8b) — see below.
 - [x] **I8a — Engine release CI.** `.github/workflows/ci.yml` (`make check` +
   pack build) and `release.yml` (cross-build linux/darwin/windows amd64+arm64,
   per-file sha256, GitHub release). Builds always embed the newest Naslos-Linux
@@ -84,8 +82,18 @@ bundled as a Tauri sidecar.
   `metadata.json`. Naslos-Linux's `install-pack` workflow sends a
   `repository_dispatch` (`naslos-release`) so a new pack rebuilds the installer
   automatically. Plan: `installer-ci-release.md`.
-- [ ] **I8b — Tauri bundles.** Run `tauri build` per OS and attach
-  AppImage/deb/rpm, .dmg/.app and .msi/.exe alongside the engine binaries.
+- [x] **I8b — Tauri bundles (validated on real VMs 2026-10-03).**
+  `.github/workflows/bundle.yml` (`workflow_dispatch`) builds a Linux AppImage +
+  deb (ubuntu-22.04, older glibc so it runs on newer distros) and a Windows NSIS
+  setup; `scripts/build-sidecar.sh` is make-free so it runs on the Windows
+  runner. Validated: the AppImage ran on a Fedora 44 **Sway** VM (wizard
+  renders; the AppImage bundles the Tauri binary + the 100 MB engine sidecar +
+  webkit2gtk), and the NSIS installer ran on an **Windows 11** VM (installs to
+  `%LocalAppData%\Naslos Installer`, window opens, wizard renders). A real
+  defect was found on Windows: `panic = "abort"` in the release profile turned
+  an init panic into `STATUS_STACK_BUFFER_OVERRUN` (0xc0000409) with no message;
+  removed. **Still to do:** attach the bundles to GitHub releases (they are
+  workflow artifacts today), and a macOS bundle.
 
 ## Spike results
 
