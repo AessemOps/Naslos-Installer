@@ -103,6 +103,24 @@ func (c *Client) WaitForDeployment(ctx context.Context, namespace, name string, 
 	})
 }
 
+// WaitForStatefulSet polls a StatefulSet until all its replicas are ready.
+func (c *Client) WaitForStatefulSet(ctx context.Context, namespace, name string, timeout time.Duration) error {
+	return poll(ctx, timeout, fmt.Sprintf("StatefulSet %s/%s", namespace, name), func() (bool, error) {
+		ss, err := c.core.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return false, nil
+		}
+		desired := int32(1)
+		if ss.Spec.Replicas != nil {
+			desired = *ss.Spec.Replicas
+		}
+		s := ss.Status
+		return s.ObservedGeneration >= ss.Generation &&
+			s.ReadyReplicas >= desired &&
+			s.UpdatedReplicas >= desired, nil
+	})
+}
+
 // poll calls check until it reports ready or the timeout elapses. A check error
 // is surfaced only when the timeout is reached, so transient API errors (the
 // resource not existing yet, a TLS blip) do not abort the wait.
