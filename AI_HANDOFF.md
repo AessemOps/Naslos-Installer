@@ -25,6 +25,39 @@ Tauri sidecar. Nothing here touches a node without the user's inputs.
 - Working tree clean. `go build ./...`, `go vet ./...`, `go test -race ./...`
   all pass (`make check`).
 
+## Live drill — 2026-10-03 (validated)
+
+The engine was run against a **freshly booted maintenance Talos VM**
+(`192.168.1.117`, Talos v1.14.0 maintenance; VNC console on `192.168.1.2:5900`)
+with the published `v0.1.0` pack:
+
+```
+./dist/naslos-install --node-ip 192.168.1.117 --domain naslos.local \
+  --admin-user admin --admin-password … --state-dir /tmp/naslos-drill-state
+```
+
+Steps config → pack → preflight → machine-config → talos-config →
+talos-install → bootstrap → kubeconfig → cni → storage all succeeded; the engine
+stopped at `helm` (I4 not implemented). Verified with the fetched kubeconfig:
+node `talos-6r3-5y2` **Ready** at Talos v1.14.1 / k8s v1.37.0, Cilium + CoreDNS
+Running, StorageClass `local-path (default)`, `local-path-provisioner` 1/1
+Running, namespace `local-path-storage` labeled
+`pod-security.kubernetes.io/enforce=privileged`.
+
+**Bug found and fixed in the same drill:** `//go:embed *` in
+`installpack/embed.go` silently drops files whose names begin with `_` or `.`,
+so Helm's `charts/naslos/templates/_helpers.tpl` was missing from the embedded
+pack and every real install failed at "checksum lists a missing member". The
+directive is now `//go:embed all:*`, with `TestEmbeddedPackVerifies` (runs when
+a pack is present; wired into the ci.yml pack-build job). Note the drill
+surfaced this only because the pack was actually embedded and verified end to
+end — the unit tests use a synthetic FS.
+
+Minor observation (not fixed): the local-path manifest's Deployment is applied
+before the namespace PSA label, so the first apply logs a non-fatal
+`would violate PodSecurity "restricted"` warning. Sequential (namespace → label
+→ workload) apply would silence it.
+
 ### Implemented and verified
 
 | Package | What | Verified by |
