@@ -154,6 +154,33 @@ the real flow runs through the Helm install and fails closed at the `admin` step
   Playwright (screenshots of form → confirm → progress → handoff). Not run on a
   real display and not bundled per OS (I8b).
 
+## Desktop bundles & VM validation (I8b, 2026-10-03)
+
+`.github/workflows/bundle.yml` (`workflow_dispatch`) builds installable
+bundles: **linux (ubuntu-22.04)** → AppImage + deb (old glibc so it runs on
+newer distros) and **windows (windows-latest)** → NSIS setup. Both jobs fetch
+the latest pack, build the engine sidecar with `scripts/build-sidecar.sh`
+(make-free so it runs on Windows) and upload the bundle as an artifact.
+
+Validated on real VMs:
+
+- **Fedora 44 Sway** (`silverblue44`, `.145`): the AppImage runs and the wizard
+  renders. The AppImage bundles `usr/bin/naslos-installer` (Tauri) + the 100 MB
+  `usr/bin/naslos-install` engine sidecar + webkit2gtk-4.1.
+- **Windows 11** (`win11`, `.146`): the NSIS installer installs to
+  `%LocalAppData%\Naslos Installer` (`naslos-installer.exe` + `naslos-install.exe`
+  + `uninstall.exe`, desktop icon + Start-menu entry); the window opens and the
+  wizard renders. **Real defect found:** the first build crashed with
+  `STATUS_STACK_BUFFER_OVERRUN` (0xc0000409, faulting module
+  `naslos-installer.exe`) with no message because the release profile had
+  `panic = "abort"`; removed, and the rebuild no longer crashes.
+  `tauri.conf.json` now declares `nsis` and
+  `windows.webviewInstallMode: downloadBootstrapper`.
+
+Not done: attach the bundles to GitHub releases (they are workflow artifacts
+today); macOS bundle. Driving the Win11 GUI required a real desktop click — a
+WMI/scheduled-task launch (no interactive token) exits silently.
+
 ## CI & release (I8a, added 2026-09-27)
 
 - **`ci.yml`** — `make check` on push/PR; a second job resolves the newest
