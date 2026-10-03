@@ -33,8 +33,14 @@ fi
 version="${VERSION:-$(git -C "$root" describe --tags --always --dirty 2>/dev/null || echo dev)}"
 
 meta="$root/installpack/metadata.json"
-talos="${TALOS_VERSION:-$(sed -n 's/.*"talosVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$meta" 2>/dev/null)}"
-schematic="${SCHEMATIC_ID:-$(sed -n 's/.*"schematicId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$meta" 2>/dev/null)}"
+talos="${TALOS_VERSION:-}"
+schematic="${SCHEMATIC_ID:-}"
+if [ -z "$talos" ] && [ -f "$meta" ]; then
+    talos=$(sed -n 's/.*"talosVersion"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$meta")
+fi
+if [ -z "$schematic" ] && [ -f "$meta" ]; then
+    schematic=$(sed -n 's/.*"schematicId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$meta")
+fi
 # Fallbacks for a checkout with no fetched pack (the constants the Makefile uses).
 [ -n "$talos" ] || talos=v1.14.1
 [ -n "$schematic" ] || schematic=4dd8e3a8b6203d3c14f049da8db4d3bb0d6d3e70c5e89dfcc1e709e81914f63c
