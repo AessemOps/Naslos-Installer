@@ -66,6 +66,16 @@ from the CLI-generated secret) → 200 with a redirect, so a CLI device works
 without web enrolment. `internal/k8s` gained SPDY `Exec`, `SecretValue` and
 `PodForDeployment`. The engine then stops at `resolver` (I6).
 
+**I6 (resolver + recovery ZIP) then implemented** (branch
+`feat/engine-resolver-archive`): `internal/resolver` manages a single
+marker-owned hosts line and writes `/etc/hosts` best-effort (fallback line shown
+on failure; elevation is left to the OS); `internal/archive` writes
+`naslos-recovery-<domain>-<stamp>.zip` with the Talos credentials, kubeconfig,
+schematic, ISO.md and README (no admin password; buddy-identity KEK warning).
+The engine finishes with a `done` event carrying `data.loginUrl`. The ZIP built
+from the real drill state dir with every member. **The engine now completes the
+whole flow**, stopping only where OS elevation is required.
+
 **Bug found and fixed in the same drill:** `//go:embed *` in
 `installpack/embed.go` silently drops files whose names begin with `_` or `.`,
 so Helm's `charts/naslos/templates/_helpers.tpl` was missing from the embedded
@@ -95,6 +105,8 @@ before the namespace PSA label, so the first apply logs a non-fatal
 | `internal/k8s` | server-side apply of pack manifests (discovery-backed dynamic client), namespace label merge, default StorageClass annotation, Deployment/StatefulSet/DaemonSet ready waits, SPDY `Exec`, `SecretValue`, `PodForDeployment`, namespace/secret ensure | unit tests (recording dynamic client); exec/pod-resolution exercised live |
 | `internal/helm` | pack chart install: values merge + engine overrides, TakeOwnership, idempotent Upgrade, CRDs on | unit tests (values merge/overrides); live install validated |
 | `internal/bootstrap` | first admin via the owner API (exec `curl`) + TOTP device generation (`authelia … totp generate`) | unit tests (fake execer); live create + TOTP login validated |
+| `internal/resolver` | marker-owned hosts line upsert/remove + best-effort write | unit tests |
+| `internal/archive` | recovery ZIP (Talos credentials, kubeconfig, schematic, ISO.md, README; no admin password) | unit test + live build from the drill state dir |
 | `desktop/` | Tauri v2 shell + Svelte 5 wizard: sidecar spawn/stream/cancel, input → confirm → progress/log → 2FA/QR + recovery-ZIP handoff, error/retry; browser preview with a simulated engine | svelte-check + vite build; `cargo build`; wizard driven end-to-end in a headless browser |
 
 `cmd/naslos-install` runs: validate → load/verify pack → preflight (skipped in
@@ -107,8 +119,10 @@ the real flow runs through the Helm install and fails closed at the `admin` step
 ### Not implemented / not wired
 
 - The Talos + Kubernetes lifecycle **was live-drilled on 2026-10-03** (see the
-  drill section above) through admin + TOTP; the resolver hosts entry and the
-  recovery ZIP are still to do, so the real flow fails closed at `resolver`.
+  drill section above) through admin + TOTP; the engine now runs the full flow
+  to the `done` event. The hosts-file write is best-effort (no elevation helper
+  is wired yet — the fallback line is shown), which is the only OS-dependent
+  gap.
 - The desktop GUI (I7) and CI (I8a) are done — see below.
 - The GUI is **not launched on a real display** in this environment and **not
   bundled per OS** (I8b). It was verified by building the Tauri app and driving
@@ -231,12 +245,11 @@ go run ./cmd/naslos-install \
 
 ## Next steps (in order)
 
-1. **I6** resolver + recovery ZIP: best-effort elevated hosts entry per OS with
-   a fallback line, then the recovery ZIP (talosconfig/controlplane/secrets
-   bundle/kubeconfig/schematic/ISO.md/README.txt, no admin password, buddy-KEK
-   warning).
-2. **I8b** Tauri per-OS bundles (AppImage/deb/rpm, dmg/app, msi/exe); the engine
+1. **I8b** Tauri per-OS bundles (AppImage/deb/rpm, dmg/app, msi/exe); the engine
    release CI (I8a) and the Tauri shell (I7) are done.
+2. Optional: wire an elevation helper for the hosts-file write
+   (`pkexec`/`sudo`/`osascript`/UAC); today it is best-effort with a fallback
+   line.
 3. Create the `INSTALLER_DISPATCH_TOKEN` secret (already needed on the
    Naslos-Linux side) and keep the install pack released for the newest
    `vX.Y.Z` tag. Then add image digests to `values-installer.yaml` (NAS-022).
