@@ -1,7 +1,7 @@
 // Package preflight probes a candidate Talos node before the install starts.
 //
 // Milestone 1 of the install (docs/installer-contract.md): the node is booted
-// from the Naslos ISO into maintenance mode. A reachable kube-apiserver means
+// from the Talos ISO into maintenance mode. A reachable kube-apiserver means
 // the node is already installed, so the engine warns and offers to resume
 // instead of re-keying it.
 package preflight
