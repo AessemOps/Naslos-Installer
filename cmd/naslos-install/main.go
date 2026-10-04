@@ -1,6 +1,7 @@
 // Command naslos-install is the headless Naslos install engine.
 //
-// It provisions a freshly-booted Talos node from a versioned install pack and
+// It provisions the Naslos node from a freshly-booted machine (the Talos ISO
+// with the Naslos schematic) using a versioned install pack and
 // streams progress as newline-delimited JSON on stdout. The Tauri desktop app
 // bundles the same binary as a sidecar; running it headless makes the flow
 // scriptable and testable (FR-INSTALL-12).

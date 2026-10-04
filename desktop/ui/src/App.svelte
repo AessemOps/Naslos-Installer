@@ -142,7 +142,7 @@
       </div>
       <div>
         <p class="text-sm font-semibold">Naslos Installer</p>
-        <p class="text-xs text-slate-500">Provision a Talos node from the Naslos ISO</p>
+        <p class="text-xs text-slate-500">Provision the Naslos node from the Talos ISO</p>
       </div>
     </div>
     {#if demo}
@@ -159,7 +159,7 @@
           <div>
             <h1 class="text-xl font-semibold">Install Naslos</h1>
             <p class="mt-1 text-sm text-slate-400">
-              Boot the target machine from the Naslos ISO, then enter its details.
+              Boot the target machine from the Talos ISO, then enter its details.
             </p>
           </div>
 
@@ -227,7 +227,7 @@
             <h1 class="text-xl font-semibold">Confirm the install</h1>
             <p class="mt-1 text-sm text-slate-400">
               This writes the Talos image to the node's disk. Make sure the machine is freshly booted
-              from the Naslos ISO and has nothing to keep.
+              from the Talos ISO and has nothing to keep.
             </p>
           </div>
 
@@ -247,7 +247,7 @@
 
           <p class="hint">
             Need the image?
-            <a class="text-sky-400 hover:underline" href={ISO_URL} target="_blank" rel="noreferrer">Download the Naslos ISO</a>.
+            <a class="text-sky-400 hover:underline" href={ISO_URL} target="_blank" rel="noreferrer">Download the Talos ISO</a>.
           </p>
 
           <div class="flex justify-between">

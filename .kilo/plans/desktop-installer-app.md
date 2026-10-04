@@ -5,8 +5,9 @@ Companion plan: `Naslos-Linux/.kilo/plans/1790466900440-desktop-installer-app.md
 Contract (stable interfaces): `Naslos-Linux/docs/installer-contract.md`.
 Spec: `docs/spec.md` §FR-INSTALL.
 
-The desktop installer provisions a Talos node booted from the Naslos ZFS ISO end
-to end, with a progress bar, first-admin + 2FA handoff and a recovery ZIP. The
+The desktop installer provisions the Naslos node from a machine booted from the
+Talos ISO (Naslos ZFS schematic) end to end, with a progress bar, first-admin +
+2FA handoff and a recovery ZIP. The
 engine is a standalone Go binary (`naslos-install`) so it can run headless and be
 bundled as a Tauri sidecar.
 
