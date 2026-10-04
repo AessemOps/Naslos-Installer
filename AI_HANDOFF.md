@@ -9,9 +9,10 @@ Spec: `Naslos-Linux/docs/spec.md` §FR-INSTALL.
 ## What this is
 
 The desktop installer (Tauri v2 shell + Svelte wizard) plus the headless Go
-engine `naslos-install` that provisions a Talos node booted from the Naslos ZFS
-ISO. The engine is a standalone binary so it runs headless and bundles as a
-Tauri sidecar. Nothing here touches a node without the user's inputs.
+engine `naslos-install` that provisions the Naslos node from a machine booted
+from the Talos ISO (the Naslos ZFS schematic). The engine is a standalone binary
+so it runs headless and bundles as a Tauri sidecar. Nothing here touches a node
+without the user's inputs.
 
 ## Repo state (2026-09-27)
 
