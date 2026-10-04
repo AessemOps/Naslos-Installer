@@ -1,4 +1,6 @@
-# Build and release the Naslos installer engine.
+# Build and release the Naslos installer: the desktop bundles (AppImage/.deb,
+# .dmg/.app, .msi/.exe) with the engine inside, plus the standalone engine
+# binaries for headless use.
 #
 # The engine always embeds the newest Naslos-Linux vX.Y.Z install pack: the
 # workflow resolves the tag, fetches + sha256-verifies the pack, and the Makefile
@@ -10,6 +12,10 @@
 #   - push a v* tag            -> release that tag
 #   - workflow_dispatch        -> release `naslos-v<version>` (optional pin)
 #   - repository_dispatch      -> release `naslos-v<version>` for the new pack
+#
+# Bundles are built on older runners on purpose: an AppImage/deb built on
+# ubuntu-22.04 runs on newer distributions. They are attached to the GitHub
+# release directly (not left as workflow artifacts).
 name: release
 
 on:
@@ -29,20 +35,22 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # Resolve the embedded Naslos-Linux version and the release/tag names once,
+  # shared by the bundle builds and the publish job.
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      naslos_tag: ${{ steps.naslos.outputs.tag }}
+      naslos_version: ${{ steps.naslos.outputs.version }}
+      release_tag: ${{ steps.release.outputs.tag }}
+      release_version: ${{ steps.release.outputs.version }}
+      release_name: ${{ steps.release.outputs.name }}
     env:
-      CGO_ENABLED: "0"
       NASLOS_VERSION_INPUT: ${{ github.event.inputs.naslos_version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Resolve the Naslos-Linux version
         id: naslos
         run: |
@@ -62,7 +70,6 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           echo "Embedding Naslos-Linux ${tag}"
-
       - name: Resolve the installer release tag
         id: release
         run: |
@@ -79,12 +86,105 @@ jobs:
           echo "name=Naslos Installer (Naslos ${{ steps.naslos.outputs.tag }})" >> "$GITHUB_OUTPUT"
           echo "Releasing ${tag} (artifacts ${version})"
 
-      - name: Fetch and verify the install pack
-        run: PACK_TAG="${{ steps.naslos.outputs.tag }}" ./scripts/fetch-install-pack.sh
+  # One job per OS produces the installable desktop bundles. The engine sidecar
+  # is built for the target triple and bundled inside each package.
+  bundles:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            runner_os: linux
+            target: x86_64-unknown-linux-gnu
+            goos: linux
+            goarch: amd64
+            bundle_args: --bundles appimage,deb
+          - os: macos-14
+            runner_os: macos
+            target: aarch64-apple-darwin
+            goos: darwin
+            goarch: arm64
+            bundle_args: --bundles app,dmg
+          - os: windows-latest
+            runner_os: windows
+            target: x86_64-pc-windows-msvc
+            goos: windows
+            goarch: amd64
+            bundle_args: --bundles nsis
+    runs-on: ${{ matrix.os }}
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Install Tauri Linux dependencies
+        if: matrix.runner_os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2 file
+      - name: Fetch the install pack
+        shell: bash
+        run: PACK_TAG="${{ needs.prepare.outputs.naslos_tag }}" ./scripts/fetch-install-pack.sh
+      - name: Build the engine sidecar
+        shell: bash
+        env:
+          TAURI_TARGET_TRIPLE: ${{ matrix.target }}
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.prepare.outputs.release_version }}
+        run: ./scripts/build-sidecar.sh
+      - name: Install the UI dependencies
+        working-directory: desktop
+        run: npm ci
+      - name: Build the bundles
+        working-directory: desktop
+        env:
+          # The Tauri bundle version comes from tauri.conf.json (0.1.0); the
+          # leading release version is applied to the file names in the publish
+          # job, so a bundle always ships beside an engine of the same release.
+          APP_VERSION: ${{ needs.prepare.outputs.release_version }}
+        run: npm run tauri -- build --target ${{ matrix.target }} ${{ matrix.bundle_args }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bundle-${{ matrix.runner_os }}
+          if-no-files-found: error
+          path: |
+            desktop/src-tauri/target/${{ matrix.target }}/release/bundle/**
+            !**/*.dSYM
 
+  # Standalone engine binaries for headless installs / scripting.
+  engine:
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fetch and verify the install pack
+        run: PACK_TAG="${{ needs.prepare.outputs.naslos_tag }}" ./scripts/fetch-install-pack.sh
       - name: Build the engine for every target
         env:
-          VERSION: ${{ steps.release.outputs.version }}
+          VERSION: ${{ needs.prepare.outputs.release_version }}
         run: |
           set -euo pipefail
           mkdir -p dist/release
@@ -101,33 +201,95 @@ jobs:
             fi
             echo "::endgroup::"
           done
+          ( cd dist/release && sha256sum naslos-install_* > checksums.txt )
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: engine-binaries
+          if-no-files-found: error
+          path: dist/release/*
 
-      - name: Checksums and release notes
+  publish:
+    needs: [prepare, bundles, engine]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Fetch the install pack
+        run: PACK_TAG="${{ needs.prepare.outputs.naslos_tag }}" ./scripts/fetch-install-pack.sh
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist/assets
+      - name: Collect the release assets
+        id: collect
+        env:
+          VERSION: ${{ needs.prepare.outputs.release_version }}
         run: |
           set -euo pipefail
-          ( cd dist/release && sha256sum naslos-install_* > checksums.txt )
-          python3 - "${{ steps.naslos.outputs.tag }}" <<'PY'
+          shopt -s nullglob globstar
+          mkdir -p dist/release
+          tmp="dist/bundles"
+          rm -rf "$tmp"; mkdir -p "$tmp"
+          # Copy every bundle output into a scratch dir first.
+          find dist/assets -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*-setup.exe' -o -name '*.msi' \) \
+            -exec cp {} "$tmp/" \;
+          # `*.app` is a directory on macOS: ship a copy as a tarball.
+          for app in dist/assets/**/*.app; do
+            [ -d "$app" ] || continue
+            cp -R "$app" "$tmp/$(basename "$app")"
+          done
+          for app in "$tmp"/*.app; do
+            [ -d "$app" ] || continue
+            base=$(basename "$app" .app)
+            ( cd "$tmp" && tar -czf "naslos-installer_${VERSION}_macos_arm64.app.tar.gz" "$(basename "$app")" && rm -rf "$(basename "$app")" )
+          done
+          # Rename bundles to carry the release version in the file name.
+          for f in "$tmp"/*; do
+            name=$(basename "$f")
+            case "$name" in
+              *.AppImage) new="naslos-installer_${VERSION}_linux_amd64.AppImage" ;;
+              *.deb)      new="naslos-installer_${VERSION}_linux_amd64.deb" ;;
+              *.dmg)      new="naslos-installer_${VERSION}_macos_arm64.dmg" ;;
+              *.app.tar.gz) new="naslos-installer_${VERSION}_macos_arm64.app.tar.gz" ;;
+              *setup.exe) new="naslos-installer_${VERSION}_windows_x64-setup.exe" ;;
+              *.msi)      new="naslos-installer_${VERSION}_windows_x64.msi" ;;
+              *)          new="$name" ;;
+            esac
+            mv "$f" "dist/release/$new"
+          done
+          # Engine binaries (already version-stamped; checksums too).
+          find dist/assets/engine-binaries -type f -exec cp {} dist/release/ \;
+          ls -la dist/release
+      - name: Release notes
+        env:
+          NASLOS_TAG: ${{ needs.prepare.outputs.naslos_tag }}
+        run: |
+          set -euo pipefail
+          python3 - "$NASLOS_TAG" <<'PY'
           import json, sys
           m = json.load(open("installpack/metadata.json"))
           tag = sys.argv[1]
           with open("dist/notes.md", "w") as f:
-              f.write(f"Naslos installer engine built against **Naslos-Linux {tag}**.\n\n")
-              f.write("| Pack field | Value |\n| --- | --- |\n")
-              f.write(f"| naslosVersion | `{m['naslosVersion']}` |\n")
-              f.write(f"| talosVersion | `{m['talosVersion']}` |\n")
-              f.write(f"| schematicId | `{m['schematicId']}` |\n")
-              f.write(f"| chartVersion | `{m['chartVersion']}` |\n")
+            f.write(f"Naslos installer built against **Naslos-Linux {tag}**.\n\n")
+            f.write("## Desktop app\n\n")
+            f.write("| OS | File |\n| --- | --- |\n")
+            f.write("| Linux | `naslos-installer_*_linux_amd64.AppImage` / `.deb` |\n")
+            f.write("| macOS (Apple silicon) | `naslos-installer_*_macos_arm64.dmg` |\n")
+            f.write("| Windows | `*_x64-setup.exe` |\n\n")
+            f.write("## Headless engine\n\n")
+            f.write("`naslos-install_<version>_<os>_<arch>` — run without the GUI.\n\n")
+            f.write("| Pack field | Value |\n| --- | --- |\n")
+            f.write(f"| naslosVersion | `{m['naslosVersion']}` |\n")
+            f.write(f"| talosVersion | `{m['talosVersion']}` |\n")
+            f.write(f"| schematicId | `{m['schematicId']}` |\n")
+            f.write(f"| chartVersion | `{m['chartVersion']}` |\n")
           PY
-          cat dist/release/checksums.txt
-
       - name: Publish the release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
-          tag_name: ${{ steps.release.outputs.tag }}
-          name: ${{ steps.release.outputs.name }}
+          tag_name: ${{ needs.prepare.outputs.release_tag }}
+          name: ${{ needs.prepare.outputs.release_name }}
           body_path: dist/notes.md
           make_latest: true
           fail_on_unmatched_files: true
           files: |
-            dist/release/naslos-install_*
-            dist/release/checksums.txt
+            dist/release/*
