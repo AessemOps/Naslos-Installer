@@ -22,6 +22,7 @@ on:
   push:
     tags:
       - "v*"
+    branches: [feat/release-bundles]
   workflow_dispatch:
     inputs:
       naslos_version:
@@ -30,8 +31,6 @@ on:
         type: string
   repository_dispatch:
     types: [naslos-release]
-  push:
-    branches: [feat/release-bundles]
 
 permissions:
   contents: write
