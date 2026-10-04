@@ -10,7 +10,7 @@ name: bundle
 on:
   workflow_dispatch:
   push:
-    branches: [ci/desktop-bundles]
+    branches: [ci/desktop-bundles, ci/wording-appimage]
 
 permissions:
   contents: read
