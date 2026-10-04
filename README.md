@@ -1,8 +1,8 @@
 # Naslos Installer
 
-Desktop installer and headless install engine for **Naslos** — provisions a
-Talos node booted from the Naslos ZFS ISO, end to end, with a progress bar, a
-first-admin + 2FA handoff and a recovery ZIP.
+Desktop installer and headless install engine for **Naslos** — provisions the
+Naslos node from a machine booted from the Talos ISO (the Naslos ZFS schematic),
+end to end, with a progress bar, a first-admin + 2FA handoff and a recovery ZIP.
 
 This repo is the app half of a two-repo split:
 
