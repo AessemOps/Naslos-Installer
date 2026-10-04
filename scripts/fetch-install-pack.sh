@@ -59,9 +59,19 @@ name="naslos-install-pack-${PACK_VERSION}.tar.gz"
 base="${PACK_BASE_URL:-https://github.com/${PACK_REPO}/releases/download/${PACK_TAG}}"
 url="${base}/${name}"
 
-for tool in curl sha256sum tar; do
+for tool in curl tar; do
     command -v "$tool" >/dev/null 2>&1 || { echo "fetch-install-pack: missing '$tool'" >&2; exit 1; }
 done
+
+# sha256sum is GNU coreutils; macOS ships `shasum -a 256` instead.
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+    sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+    echo "fetch-install-pack: neither sha256sum nor shasum is available" >&2
+    exit 1
+fi
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
@@ -79,7 +89,7 @@ if [ -z "$PACK_SHA256" ]; then
     fi
 fi
 
-actual=$(sha256sum "$tmp/$name" | awk '{print $1}')
+actual=$(sha256 "$tmp/$name")
 if [ "$actual" != "$PACK_SHA256" ]; then
     echo "fetch-install-pack: checksum mismatch for $name" >&2
     echo "  expected: $PACK_SHA256" >&2
