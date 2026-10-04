@@ -22,7 +22,6 @@ on:
   push:
     tags:
       - "v*"
-    branches: [feat/release-bundles]
   workflow_dispatch:
     inputs:
       naslos_version:
