@@ -21,7 +21,7 @@ name: release
 on:
   push:
     tags:
-      - "v*"
+      - "naslos-v*"
   workflow_dispatch:
     inputs:
       naslos_version:
@@ -31,8 +31,12 @@ on:
   repository_dispatch:
     types: [naslos-release]
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   # Resolve the embedded Naslos-Linux version and the release/tag names once,
@@ -47,6 +51,7 @@ jobs:
       release_name: ${{ steps.release.outputs.name }}
     env:
       NASLOS_VERSION_INPUT: ${{ github.event.inputs.naslos_version }}
+      NASLOS_DISPATCH_TAG: ${{ github.event.client_payload.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -55,13 +60,28 @@ jobs:
         id: naslos
         run: |
           set -euo pipefail
-          if [ -n "${NASLOS_VERSION_INPUT}" ]; then
+          semver='^v?[0-9]+\.[0-9]+\.[0-9]+$'
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            # The release tag IS the contract: naslos-vX.Y.Z. A stray `v*` tag
+            # used to publish an unguarded release from an old commit.
+            if ! printf '%s' "${GITHUB_REF_NAME}" | grep -Eq '^naslos-v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::release tags must be naslos-vX.Y.Z (got ${GITHUB_REF_NAME})"
+              exit 1
+            fi
+            tag="${GITHUB_REF_NAME#naslos-}"
+          elif [ -n "${NASLOS_DISPATCH_TAG}" ]; then
+            tag="${NASLOS_DISPATCH_TAG}"
+          elif [ -n "${NASLOS_VERSION_INPUT}" ]; then
             tag="v${NASLOS_VERSION_INPUT#v}"
           else
             tag=$(git ls-remote --tags --refs --sort=-v:refname \
                     https://github.com/AessemOps/Naslos-Linux.git 'v*' \
                   | awk '{print $2}' | sed 's#^refs/tags/##' \
                   | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
+          fi
+          if ! printf '%s' "$tag" | grep -Eq "$semver"; then
+            echo "::error::refusing invalid Naslos version ${tag}"
+            exit 1
           fi
           if [ -z "$tag" ]; then
             echo "::error::no vX.Y.Z tag found on AessemOps/Naslos-Linux"
@@ -98,6 +118,35 @@ jobs:
         env:
           NASLOS_VERSION: ${{ steps.naslos.outputs.tag }}
           INSTALLER_VERSION: ${{ steps.release.outputs.version }}
+
+      - name: Require green CI for this commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Empty check-runs used to satisfy `all(...)`; require the three
+          # checks to exist and the latest run of each to be successful.
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            --jq '.check_runs[]' > /tmp/check-runs.ndjson
+          python3 - <<'PY'
+          import json
+          wanted = {"test", "desktop", "pack-build"}
+          latest = {}
+          with open("/tmp/check-runs.ndjson", encoding="utf-8") as fh:
+              for line in fh:
+                  line = line.strip()
+                  if not line:
+                      continue
+                  run = json.loads(line)
+                  if run.get("name") in wanted:
+                      latest[run["name"]] = run.get("conclusion")
+          missing = sorted(wanted - set(latest))
+          bad = {k: v for k, v in latest.items() if v != "success"}
+          if missing or bad:
+              raise SystemExit(f"release: CI is not green (missing={missing}, not-success={bad})")
+          print("release: test, desktop and pack-build are green for this commit")
+          PY
 
   # One job per OS produces the installable desktop bundles. The engine sidecar
   # is built for the target triple and bundled inside each package.
@@ -163,12 +212,21 @@ jobs:
       - name: Install the UI dependencies
         working-directory: desktop
         run: npm ci
+      - name: Stamp the release version into the bundle
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          # tauri.conf.json shipped 0.1.0 forever, so every release looked like
+          # 0.1.0 to `apt` and to the updater.
+          tmp=$(mktemp)
+          jq --arg v "$VERSION" '.version = $v' desktop/src-tauri/tauri.conf.json > "$tmp"
+          mv "$tmp" desktop/src-tauri/tauri.conf.json
+          grep -q "\"version\": \"$VERSION\"" desktop/src-tauri/tauri.conf.json
       - name: Build the bundles
         working-directory: desktop
         env:
-          # The Tauri bundle version comes from tauri.conf.json (0.1.0); the
-          # leading release version is applied to the file names in the publish
-          # job, so a bundle always ships beside an engine of the same release.
           APP_VERSION: ${{ needs.prepare.outputs.release_version }}
         run: npm run tauri -- build --target ${{ matrix.target }} ${{ matrix.bundle_args }}
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -224,6 +282,8 @@ jobs:
   publish:
     needs: [prepare, bundles, engine]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Fetch the install pack
@@ -272,6 +332,12 @@ jobs:
           # Engine binaries (already version-stamped; checksums too).
           find dist/assets/engine-binaries -type f -exec cp {} dist/release/ \;
           ls -la dist/release
+      - name: Write checksums for every asset
+        run: |
+          set -euo pipefail
+          cd dist/release
+          sha256sum $(ls | grep -v '^checksums.txt$') > checksums.txt
+          cat checksums.txt
       - name: Release notes
         env:
           NASLOS_TAG: ${{ needs.prepare.outputs.naslos_tag }}

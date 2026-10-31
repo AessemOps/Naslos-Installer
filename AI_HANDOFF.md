@@ -187,8 +187,10 @@ WMI/scheduled-task launch (no interactive token) exits silently.
 - **`ci.yml`** — `make check` on push/PR; a second job resolves the newest
   Naslos-Linux `vX.Y.Z` tag, fetches that pack and runs `make build`; a third
   (`desktop`) builds/type-checks the wizard and `cargo check`s the Tauri shell.
-  If no semver tag exists yet the pack job warns and skips instead of failing.
-- **`release.yml`** — on installer `v*` tag, `workflow_dispatch` (optional
+  If no semver tag exists yet (`exit 3`) the pack job warns and skips; any other
+  failure, including a checksum mismatch, fails the run.
+- **`release.yml`** — on an installer `naslos-v*` tag (a bare `v*` tag is
+  refused), `workflow_dispatch` (optional
   `naslos_version` input) and `repository_dispatch: naslos-release`. It resolves
   the newest Naslos-Linux `vX.Y.Z` tag, fetches + verifies the pack, cross-builds
   linux/darwin/windows (amd64 + arm64) with `make build VERSION=<release tag>`,
