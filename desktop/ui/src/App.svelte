@@ -36,6 +36,8 @@
     logLines = [...logLines, line];
   }
 
+  let completed = false;
+
   function handleEvent(event: EngineEvent) {
     if (event.error) {
       if (event.error.step) stepStatus = { ...stepStatus, [event.error.step]: 'failed' };
@@ -57,6 +59,7 @@
     handoff = mergeHandoff(handoff, event);
     if (event.msg) pushLog(event.msg);
     if (event.step === 'done') {
+      completed = true;
       handoff = { ...handoff, secret: handoff.secret ?? secretFromURI(handoff.otpauthUri) };
       stepStatus = Object.fromEntries(
         Object.keys(stepStatus).map((key) => [key, 'ok' as StepState]),
@@ -68,6 +71,17 @@
 
   function handleExit(exit: ExitPayload) {
     cancel = null;
+    if (exit.success && !completed && phase === 'progress') {
+      // The engine exited 0 without a `done` line, so the install is not
+      // necessarily complete (and the handoff never arrived). Do not show a
+      // success screen.
+      failure = {
+        step: currentStep,
+        msg: 'The installer finished without reporting completion. Check the log; the node may need a resume.',
+      };
+      phase = 'error';
+      return;
+    }
     if (!exit.success && phase !== 'error' && phase !== 'handoff') {
       failure = failure ?? {
         step: currentStep,
@@ -95,6 +109,7 @@
     logLines = [];
     handoff = {};
     failure = null;
+    completed = false;
     try {
       cancel = await runInstall(
         { ...input, name: input.name || derivedName },

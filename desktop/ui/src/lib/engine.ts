@@ -1,6 +1,13 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import type { EngineEvent, ExitPayload, InstallInput, RunHandlers } from './types';
+import type {
+  EngineEvent,
+  ExitPayload,
+  InstallInput,
+  OutputPayload,
+  RunHandlers,
+  StartedPayload,
+} from './types';
 
 // The engine is a Tauri sidecar that writes newline-delimited JSON to stdout.
 // In a plain browser (`npm run dev`) there is no sidecar, so a simulated stream
@@ -35,17 +42,42 @@ export async function runInstall(input: InstallInput, handlers: RunHandlers): Pr
 
 async function runTauri(input: InstallInput, handlers: RunHandlers): Promise<() => void> {
   const unlisten: UnlistenFn[] = [];
+  let currentRunId: number | null = null;
+  const ours = (runId: number) => currentRunId === null || runId === currentRunId;
+
+  unlisten.push(await listen<StartedPayload>('install://run', (event) => {
+    currentRunId = event.payload.runId;
+  }));
   unlisten.push(
-    await listen<string>('install://stdout', (event) => {
-      const parsed = parseLine(event.payload);
+    await listen<OutputPayload>('install://stdout', (event) => {
+      if (!ours(event.payload.runId)) return;
+      const parsed = parseLine(event.payload.line);
       if (parsed) handlers.onEvent(parsed);
-      else handlers.onLog(event.payload);
+      else handlers.onLog(event.payload.line);
     }),
   );
-  unlisten.push(await listen<string>('install://stderr', (event) => handlers.onLog(event.payload)));
-  unlisten.push(await listen<ExitPayload>('install://exit', (event) => handlers.onExit(event.payload)));
+  unlisten.push(
+    await listen<OutputPayload>('install://stderr', (event) => {
+      if (!ours(event.payload.runId)) return;
+      handlers.onLog(event.payload.line);
+    }),
+  );
+  unlisten.push(
+    await listen<ExitPayload>('install://exit', (event) => {
+      if (!ours(event.payload.runId)) return;
+      handlers.onExit(event.payload);
+    }),
+  );
 
-  await invoke('start_install', { input });
+  try {
+    const runId = await invoke<number>('start_install', { input });
+    if (currentRunId === null) currentRunId = runId;
+  } catch (error) {
+    // The listeners were registered before the spawn; without this they would
+    // leak and keep routing a later run's events into the failed attempt.
+    for (const off of unlisten) off();
+    throw error;
+  }
 
   return () => {
     for (const off of unlisten) off();
@@ -94,7 +126,7 @@ function runSimulated(input: InstallInput, handlers: RunHandlers): () => void {
       if (item.event) {
         handlers.onEvent(item.event);
         if (item.event.step === 'done') {
-          handlers.onExit({ code: 0, success: true });
+          handlers.onExit({ runId: 0, code: 0, success: true });
           return;
         }
       }
