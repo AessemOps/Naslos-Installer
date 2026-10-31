@@ -31,8 +31,14 @@ var (
 
 // Validate checks every input before the engine touches the node.
 func (in Input) Validate() error {
-	if net.ParseIP(in.NodeIP) == nil || net.ParseIP(in.NodeIP).To4() == nil {
+	ip := net.ParseIP(in.NodeIP)
+	if ip == nil || ip.To4() == nil {
 		return fmt.Errorf("node IP %q is not a valid IPv4 address", in.NodeIP)
+	}
+	if ip.IsUnspecified() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsMulticast() ||
+		ip.Equal(net.IPv4bcast) {
+		return fmt.Errorf("node IP %q is not a unicast host address", in.NodeIP)
 	}
 	if in.Domain == "" {
 		return errors.New("domain is required")
