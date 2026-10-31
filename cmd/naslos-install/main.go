@@ -16,11 +16,13 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -70,6 +72,7 @@ type options struct {
 	resume       bool
 	installDisk  string
 	confirmWipe  string
+	listDisks    bool
 }
 
 func run(args []string, stdout io.Writer) error {
@@ -86,6 +89,40 @@ func run(args []string, stdout io.Writer) error {
 	}
 	emDone := func(msg string) error { return em.Done(msg) }
 
+	if opts.listDisks {
+		if ip := net.ParseIP(opts.input.NodeIP); ip == nil || ip.To4() == nil {
+			return em.Fail("config", "invalid node IP", fmt.Sprintf("%q is not a valid IPv4 address", opts.input.NodeIP))
+		}
+		probe, err := talosclient.Dial(ctx, opts.input.NodeIP)
+		if err != nil {
+			return em.Fail("disks", "cannot open the Talos API", err.Error())
+		}
+		defer probe.Close()
+		disks, err := probe.Disks(ctx)
+		if err != nil {
+			return em.Fail("disks", "cannot list the node's disks", err.Error())
+		}
+		if len(disks) == 0 {
+			return em.Fail("disks", "the node reported no disks", "check that the node booted from the Talos ISO")
+		}
+		payload, err := json.Marshal(disks)
+		if err != nil {
+			return em.Fail("disks", "cannot encode the disk list", err.Error())
+		}
+		var lines []string
+		for _, d := range disks {
+			note := ""
+			if d.Readonly || d.CDROM {
+				note = " (not a candidate)"
+			}
+			lines = append(lines, fmt.Sprintf("%s  %d bytes  %s%s", d.Device, d.Size, d.Model, note))
+		}
+		if err := em.ProgressData("disks", event.Running, 1,
+			"Disks: "+strings.Join(lines, "; "), map[string]string{"disks": string(payload)}); err != nil {
+			return err
+		}
+		return emDone("choose a disk with --install-disk and re-run")
+	}
 	if err := opts.input.Validate(); err != nil {
 		return em.Fail("config", "invalid install inputs", err.Error())
 	}
@@ -678,6 +715,7 @@ func parse(args []string) (options, error) {
 	fs.BoolVar(&addResolver, "add-resolver", false, "add the name to the local hosts file (best effort)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "validate inputs and the pack, then stop before touching the node")
 	fs.BoolVar(&o.resume, "resume", false, "continue a previously interrupted install of an already-installed node")
+	fs.BoolVar(&o.listDisks, "list-disks", false, "list the node's whole disks and exit (choose one with --install-disk)")
 	fs.StringVar(&o.installDisk, "install-disk", "", "disk Talos installs to, e.g. /dev/vda (required; never inferred)")
 	fs.StringVar(&o.confirmWipe, "confirm-wipe", "", "repeat --install-disk to confirm erasing it (required unless --dry-run)")
 	fs.BoolVar(&noJSON, "no-json-progress", false, "write human-readable progress instead of NDJSON")

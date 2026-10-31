@@ -15,9 +15,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/siderolabs/talos/pkg/machinery/api/machine"
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
+	"github.com/siderolabs/talos/pkg/machinery/resources/block"
 	"google.golang.org/grpc/codes"
 )
 
@@ -28,6 +30,7 @@ type API interface {
 	Bootstrap(ctx context.Context) error
 	Kubeconfig(ctx context.Context) ([]byte, error)
 	Version(ctx context.Context) (string, error)
+	Disks(ctx context.Context) ([]DiskInfo, error)
 	Services(ctx context.Context) (map[string]string, error)
 	Close() error
 }
@@ -49,6 +52,19 @@ func Dial(ctx context.Context, node string) (API, error) {
 		return nil, fmt.Errorf("opening a Talos client to %s: %w", node, err)
 	}
 	return &talosAPI{c: c}, nil
+}
+
+// DiskInfo is a whole disk reported by the maintenance-mode block subsystem.
+// Only fields an operator needs to identify the install target are exposed.
+type DiskInfo struct {
+	Device     string `json:"device"`
+	Size       uint64 `json:"size"`
+	Model      string `json:"model,omitempty"`
+	Serial     string `json:"serial,omitempty"`
+	Transport  string `json:"transport,omitempty"`
+	Rotational bool   `json:"rotational"`
+	Readonly   bool   `json:"readonly"`
+	CDROM      bool   `json:"cdrom"`
 }
 
 type talosAPI struct{ c *client.Client }
@@ -90,6 +106,35 @@ func (t *talosAPI) Version(ctx context.Context) (string, error) {
 		return "", errors.New("empty version response")
 	}
 	return resp.GetMessages()[0].GetVersion().GetTag(), nil
+}
+
+// Disks lists whole disks from the node's block subsystem. It is only used to
+// help the operator choose --install-disk; the installer never picks one.
+func (t *talosAPI) Disks(ctx context.Context) ([]DiskInfo, error) {
+	kind := resource.NewMetadata(block.NamespaceName, block.DiskType, "", resource.VersionUndefined)
+	list, err := t.c.COSI.List(ctx, kind)
+	if err != nil {
+		return nil, fmt.Errorf("listing disks: %w", err)
+	}
+	out := make([]DiskInfo, 0, len(list.Items))
+	for _, item := range list.Items {
+		disk, ok := item.(*block.Disk)
+		if !ok {
+			continue
+		}
+		spec := disk.TypedSpec()
+		out = append(out, DiskInfo{
+			Device:     spec.DevPath,
+			Size:       spec.Size,
+			Model:      spec.Model,
+			Serial:     spec.Serial,
+			Transport:  spec.Transport,
+			Rotational: spec.Rotational,
+			Readonly:   spec.Readonly,
+			CDROM:      spec.CDROM,
+		})
+	}
+	return out, nil
 }
 
 func (t *talosAPI) Services(ctx context.Context) (map[string]string, error) {
