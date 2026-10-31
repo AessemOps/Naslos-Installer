@@ -86,3 +86,22 @@ func TestFailEmitsErrorEventAndReturnsError(t *testing.T) {
 		t.Fatalf("error event must not also carry step/status: %+v", ev)
 	}
 }
+
+func TestHumanEmitterWritesReadableLines(t *testing.T) {
+	var buf bytes.Buffer
+	em := NewHuman(&buf)
+	if err := em.Step("pack", "verifying", 20); err != nil {
+		t.Fatal(err)
+	}
+	_ = em.Fail("preflight", "node unreachable", "timeout")
+	out := buf.String()
+	if !strings.Contains(out, "[ 20%] pack: verifying") {
+		t.Fatalf("missing progress line:\n%s", out)
+	}
+	if !strings.Contains(out, "preflight: node unreachable") {
+		t.Fatalf("missing failure line:\n%s", out)
+	}
+	if strings.Contains(out, "{") {
+		t.Fatalf("human mode must not emit JSON:\n%s", out)
+	}
+}

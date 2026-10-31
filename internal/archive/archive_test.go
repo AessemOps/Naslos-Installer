@@ -71,3 +71,17 @@ func TestBuildContainsCredentialsAndNoPassword(t *testing.T) {
 		t.Errorf("README must show the login URL:\n%s", readme)
 	}
 }
+
+func TestAFailedBuildLeavesNoFinalArchive(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := t.TempDir() // deliberately empty: a member read fails
+	path, err := Build(Options{Dir: dir, StateDir: stateDir, Domain: "naslos.local", Now: time.Unix(1700000000, 0).UTC()})
+	if err == nil {
+		t.Fatalf("want a missing-member error, got %s", path)
+	}
+	for _, name := range []string{"naslos-recovery-naslos.local-20231114T221320Z.zip", "naslos-recovery-naslos.local-20231114T221320Z.zip.tmp"} {
+		if _, statErr := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(statErr) {
+			t.Fatalf("%s must not remain after a failed build", name)
+		}
+	}
+}

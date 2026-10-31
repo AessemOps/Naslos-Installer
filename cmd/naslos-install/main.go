@@ -22,8 +22,10 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	embeddedpack "github.com/AessemOps/Naslos-Installer/installpack"
@@ -72,7 +74,13 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	em := event.New(stdout)
+	if !opts.jsonProgress {
+		em = event.NewHuman(stdout)
+	}
 	emDone := func(msg string) error { return em.Done(msg) }
 
 	if err := opts.input.Validate(); err != nil {
@@ -216,7 +224,8 @@ func run(args []string, stdout io.Writer) error {
 	}
 
 	// --- milestone 3: apply the config, bootstrap etcd, fetch kubeconfig ---
-	ctx := context.Background()
+	// A cancelled context (Ctrl-C/SIGTERM) aborts the RPC in flight instead of
+	// leaving a half-applied install running detached.
 
 	maintenance, err := talosclient.Dial(ctx, opts.input.NodeIP)
 	if err != nil {

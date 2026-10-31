@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
@@ -44,16 +45,24 @@ type Event struct {
 
 // Emitter serialises events to a writer, one JSON object per line.
 type Emitter struct {
-	mu sync.Mutex
-	w  io.Writer
+	mu    sync.Mutex
+	w     io.Writer
+	human bool
 }
 
-// New returns an Emitter writing to w.
+// New returns an Emitter writing NDJSON to w (the stable contract).
 func New(w io.Writer) *Emitter { return &Emitter{w: w} }
+
+// NewHuman returns an Emitter that writes one readable line per event. It is
+// the `--no-json-progress` mode; the NDJSON contract is unchanged.
+func NewHuman(w io.Writer) *Emitter { return &Emitter{w: w, human: true} }
 
 func (e *Emitter) emit(ev Event) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.human {
+		return e.emitHuman(ev)
+	}
 	line, err := json.Marshal(ev)
 	if err != nil {
 		return err
@@ -62,6 +71,24 @@ func (e *Emitter) emit(ev Event) error {
 		return err
 	}
 	return nil
+}
+
+func (e *Emitter) emitHuman(ev Event) error {
+	prefix := ""
+	if ev.Pct != nil {
+		prefix = fmt.Sprintf("[%3d%%] ", *ev.Pct)
+	}
+	line := prefix
+	switch {
+	case ev.Error != nil:
+		line += ev.Error.Step + ": " + ev.Error.Msg
+	case ev.Step != "":
+		line += ev.Step + ": " + ev.Msg
+	default:
+		line += ev.Msg
+	}
+	_, err := fmt.Fprintln(e.w, strings.TrimRight(line, " "))
+	return err
 }
 
 // Progress emits a step update.
