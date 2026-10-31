@@ -58,6 +58,19 @@ dist/naslos-install \
 unset NASLOS_ADMIN_PASSWORD
 ```
 
+### Choose the install disk
+
+The engine never infers the disk. List the node's whole disks first (this only
+needs the node IP; nothing is written):
+
+```bash
+dist/naslos-install --node-ip 192.168.1.117 --list-disks
+```
+
+Then pass the chosen device as `--install-disk` and repeat it with
+`--confirm-wipe` on the real run. Read-only devices and CD-ROMs are marked as
+non-candidates in the listing.
+
 ### Resume an interrupted install
 
 `state.json` records each milestone. If the engine stops after the node is

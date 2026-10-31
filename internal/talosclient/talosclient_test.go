@@ -20,6 +20,10 @@ func (f *fakeAPI) Bootstrap(context.Context) error {
 	return f.bootstrapErr
 }
 func (f *fakeAPI) Kubeconfig(context.Context) ([]byte, error) { return []byte("kubeconfig"), nil }
+func (f *fakeAPI) Disks(context.Context) ([]DiskInfo, error) {
+	return []DiskInfo{{Device: "/dev/vda", Size: 1 << 30}}, nil
+}
+
 func (f *fakeAPI) Version(context.Context) (string, error) {
 	f.versionCalls++
 	return "v1.14.1", f.versionErr
