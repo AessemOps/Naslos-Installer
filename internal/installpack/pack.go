@@ -109,7 +109,42 @@ func (p *Pack) Verify() error {
 			return fmt.Errorf("checksum mismatch for %q: got %s, want %s", rel, got, want)
 		}
 	}
-	return nil
+
+	// The loop above only proves that every *listed* member is intact. A pack
+	// may contain an extra file (a chart template, a hook) that Extract then
+	// writes and Helm runs; require every member to be covered.
+	return fs.WalkDir(p.fsys, ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if name == "." || toolingMember(name) || d.IsDir() {
+			if d != nil && d.Type()&fs.ModeSymlink != 0 {
+				return fmt.Errorf("pack contains a symlink at %q", name)
+			}
+			return nil
+		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			return fmt.Errorf("pack contains a symlink at %q", name)
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("pack contains a non-regular file at %q", name)
+		}
+		if _, ok := p.meta.Checksums[name]; !ok {
+			return fmt.Errorf(
+				"pack member %q is not listed in metadata.checksums; refusing an unverified file",
+				name,
+			)
+		}
+		return nil
+	})
+}
+
+// toolingMember reports files that live beside the pack for the Go package but
+// are not pack content: metadata.json cannot hash itself, and README.md and
+// embed.go are this package's own files (the embed pattern captures them).
+// Everything else must appear in metadata.checksums.
+func toolingMember(name string) bool {
+	return name == "metadata.json" || name == "README.md" || name == "embed.go"
 }
 
 // machineConfigPath is the template member.
@@ -152,7 +187,7 @@ func (p *Pack) Extract(dst string) error {
 		if err != nil {
 			return err
 		}
-		if name == "." || name == "metadata.json" || name == "README.md" {
+		if name == "." || toolingMember(name) {
 			return nil
 		}
 		target := path.Join(dst, name)
