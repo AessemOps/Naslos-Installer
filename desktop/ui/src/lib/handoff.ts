@@ -43,5 +43,15 @@ export function secretFromURI(uri: string | undefined): string | undefined {
 }
 
 export function resolveLoginUrl(domain: string, handoff: Handoff): string {
-  return handoff.loginUrl ?? autheliaURL(domain);
+  // The value can come from engine output; only hand an https URL to the
+  // browser. Anything else (http:, javascript:, data:) falls back to the
+  // locally derived address.
+  if (handoff.loginUrl) {
+    try {
+      if (new URL(handoff.loginUrl).protocol === 'https:') return handoff.loginUrl;
+    } catch {
+      // fall through
+    }
+  }
+  return autheliaURL(domain);
 }
