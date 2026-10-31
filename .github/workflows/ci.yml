@@ -37,9 +37,18 @@ jobs:
       - name: Fetch the latest install pack
         id: fetch
         run: |
-          if ! ./scripts/fetch-install-pack.sh; then
+          set +e
+          ./scripts/fetch-install-pack.sh
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            exit 0
+          elif [ "$rc" -eq 3 ]; then
             echo "::warning::no Naslos-Linux vX.Y.Z release yet; skipping the pack build"
             echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::fetch-install-pack.sh failed (exit $rc); refusing to treat a verification failure as a skip"
+            exit "$rc"
           fi
       - name: Build against the embedded pack
         if: steps.fetch.outputs.skip != 'true'

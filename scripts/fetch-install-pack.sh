@@ -45,8 +45,11 @@ if [ -z "$PACK_VERSION" ]; then
         PACK_TAG="$(resolve_latest_tag || true)"
     fi
     if [ -z "$PACK_TAG" ]; then
+        # Exit 3 is the only "nothing published yet" signal. CI used to treat
+        # every failure (including a checksum mismatch) as "skip", which made
+        # tampering green.
         echo "fetch-install-pack: no vX.Y.Z tag found in ${PACK_REPO}; set PACK_VERSION or PACK_TAG" >&2
-        exit 1
+        exit 3
     fi
     PACK_VERSION="${PACK_TAG#v}"
 fi
