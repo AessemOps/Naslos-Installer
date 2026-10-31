@@ -70,6 +70,25 @@ func TestLoadOrCreateBundleReusesPKI(t *testing.T) {
 	}
 }
 
+func TestGenerateAfterReloadDoesNotPanic(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.json")
+	if _, _, err := LoadOrCreateBundle(path, "v1.14.1"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	reloaded, reused, err := LoadOrCreateBundle(path, "v1.14.1")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !reused {
+		t.Fatal("expected the persisted bundle to be reused")
+	}
+	// Regression: the Clock field is not serialized, so a resumed bundle used
+	// to panic in GenerateTalosAPIClientCertificate.
+	if _, err := Generate(inputs(), []byte(testPatch), reloaded); err != nil {
+		t.Fatalf("Generate after reload: %v", err)
+	}
+}
+
 func TestGenerateRequiresNodeIP(t *testing.T) {
 	dir := t.TempDir()
 	bundle, _, err := LoadOrCreateBundle(filepath.Join(dir, "secrets.json"), "v1.14.1")
