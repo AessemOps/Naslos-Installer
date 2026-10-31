@@ -160,8 +160,26 @@ func run(args []string, stdout io.Writer) error {
 		}
 		if nodeState == preflight.Installed {
 			if !opts.resume {
+				// :6443 answering is not proof of a Talos node. Confirm the
+				// Talos API answers before refusing; otherwise a stray
+				// listener would permanently look like "already installed".
+				probe, probeErr := talosclient.Dial(ctx, opts.input.NodeIP)
+				if probeErr != nil {
+					return em.Fail("preflight",
+						"something answers on :6443 but the Talos API does not",
+						"refusing to guess whether this node is installed: "+probeErr.Error())
+				}
+				callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+				_, versionErr := probe.Version(callCtx)
+				cancel()
+				_ = probe.Close()
+				if versionErr != nil {
+					return em.Fail("preflight",
+						"something answers on :6443 but it is not the Talos API",
+						versionErr.Error())
+				}
 				return em.Fail("preflight", "node looks already installed",
-					"kube-apiserver answered on :6443; refusing to re-key an installed node (pass --resume with the state file)")
+					"kube-apiserver answered on :6443 and the Talos API confirms an installed node; pass --resume with the state file")
 			}
 			// Prove the persisted talosconfig still controls this node before
 			// touching it. A mismatched or re-keyed node must not be adopted.
@@ -441,7 +459,11 @@ func run(args []string, stdout io.Writer) error {
 			subnet,
 			"naslos-talosconfig",
 		)
-		if err := helm.Install(ctx, helm.Options{
+		// The Helm SDK honours ctx; without a deadline a hung API call would stall
+		// the install forever (the wait loops below have their own timeouts).
+		helmCtx, helmCancel := context.WithTimeout(ctx, 20*time.Minute)
+		defer helmCancel()
+		if err := helm.Install(helmCtx, helm.Options{
 			KubeconfigPath: kubeconfigPath,
 			ChartDir:       chartDir,
 			Release:        "naslos",
