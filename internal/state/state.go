@@ -8,6 +8,7 @@ package state
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -74,7 +75,15 @@ func Load(path string) (*State, error) {
 	}
 	var s State
 	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, err
+		// A truncated write (an older version wrote in place) must not make
+		// the only resume record unreadable.
+		if backup, berr := os.ReadFile(path + ".bak"); berr == nil {
+			if json.Unmarshal(backup, &s) != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
 	if s.Version != Version {
 		return nil, errors.New("unsupported state version")
@@ -82,19 +91,91 @@ func Load(path string) (*State, error) {
 	if s.Steps == nil {
 		s.Steps = map[string]Step{}
 	}
+	// Re-assert permissions: the file holds the domain and admin identity.
+	_ = os.Chmod(path, 0o600)
+
+	// Scrub a password persisted by an older build.
+	var probe map[string]json.RawMessage
+	if json.Unmarshal(raw, &probe) == nil {
+		if inputRaw, ok := probe["input"]; ok {
+			var fields map[string]json.RawMessage
+			if json.Unmarshal(inputRaw, &fields) == nil {
+				_, legacy := fields["AdminPassword"]
+				_, legacyLower := fields["adminPassword"]
+				if legacy || legacyLower {
+					if err := s.Save(path); err != nil {
+						return nil, fmt.Errorf("scrubbing the persisted password: %w", err)
+					}
+				}
+			}
+		}
+	}
 	return &s, nil
 }
 
-// Save writes the state 0600, creating the parent directory 0700.
+// Save writes the state atomically (temp file, fsync, rename) with 0600,
+// keeping the previous version as state.json.bak for a torn-write fallback.
 func (s *State) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	raw, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, raw, 0o600)
+	tmp, err := os.CreateTemp(dir, ".state-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	// Best-effort backup of the previous state.
+	if previous, err := os.ReadFile(path); err == nil {
+		_ = os.WriteFile(path+".bak", previous, 0o600)
+	}
+	return os.Rename(tmpName, path)
+}
+
+// Lock takes an exclusive lock for the state directory so two engines cannot
+// drive one install. The returned func releases it. A lock older than 24 h is
+// treated as stale (the engine that created it is gone).
+func Lock(dir string) (func(), error) {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(dir, ".lock")
+	for attempt := 0; attempt < 2; attempt++ {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
+			return func() {
+				_ = f.Close()
+				_ = os.Remove(path)
+			}, nil
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil || time.Since(info.ModTime()) < 24*time.Hour {
+			break
+		}
+		_ = os.Remove(path)
+	}
+	return nil, errors.New("another installer is already using this state directory")
 }
 
 // SetStep records a milestone's status.

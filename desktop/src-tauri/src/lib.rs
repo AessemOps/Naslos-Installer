@@ -62,8 +62,7 @@ fn start_install(
         input.domain,
         "--admin-user".to_string(),
         input.admin_user,
-        "--admin-password".to_string(),
-        input.admin_password,
+        "--admin-password-stdin".to_string(),
         "--json-progress".to_string(),
     ];
     if !input.name.trim().is_empty() {
@@ -78,7 +77,14 @@ fn start_install(
         .shell()
         .sidecar("naslos-install")
         .map_err(|e| e.to_string())?;
-    let (mut rx, child) = sidecar.args(args).spawn().map_err(|e| e.to_string())?;
+    let (mut rx, mut child) = sidecar.args(args).spawn().map_err(|e| e.to_string())?;
+    // The password must never be an argv element: it is visible in the process
+    // list and in any audit log of this process. One line on stdin instead.
+    let mut line = format!("{}\n", input.admin_password);
+    let write_result = child.write(line.as_bytes());
+    line.clear();
+    drop(line);
+    write_result.map_err(|e| format!("sending the administrator password to the engine: {e}"))?;
     *state.child.lock().map_err(|e| e.to_string())? = Some(child);
 
     let handle = app.clone();

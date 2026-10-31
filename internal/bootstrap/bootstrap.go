@@ -15,6 +15,7 @@ import (
 // Execer runs a command in a pod container. *k8s.Client implements it.
 type Execer interface {
 	Exec(ctx context.Context, namespace, pod, container string, command []string) (string, string, error)
+	ExecWithStdin(ctx context.Context, namespace, pod, container string, command []string, stdin string) (string, string, error)
 }
 
 // AdminOptions describe the first administrator and the terminal exec target.
@@ -46,36 +47,75 @@ func CreateAdmin(ctx context.Context, e Execer, o AdminOptions) error {
 	}
 
 	api := strings.TrimRight(o.APIURL, "/")
-	stdout, stderr, err := e.Exec(ctx, o.TerminalNamespace, o.TerminalPod, o.TerminalContainer, []string{
-		"curl", "-sS", "-X", "POST", api + "/api/users",
-		"-H", "X-Naslos-Proxy-Secret: " + o.ProxySecret,
-		"-H", "Remote-User: " + o.UID,
-		"-H", "Remote-Groups: naslos_admins",
-		"-H", "Content-Type: application/json",
-		"-d", string(body),
-	})
+
+	// The password and proxy secret go through curl's config on stdin. Putting
+	// them in argv put both into the kube-apiserver audit log (the default
+	// policy records request URIs at Metadata level) and into /proc.
+	config := "url = " + curlQuote(api+"/api/users") + "\n" +
+		"request = \"POST\"\n" +
+		curlHeader("X-Naslos-Proxy-Secret", o.ProxySecret) +
+		curlHeader("Remote-User", o.UID) +
+		curlHeader("Remote-Groups", "naslos_admins") +
+		curlHeader("Content-Type", "application/json") +
+		"data-binary = " + curlQuote(string(body)) + "\n"
+	stdout, stderr, err := e.ExecWithStdin(
+		ctx, o.TerminalNamespace, o.TerminalPod, o.TerminalContainer,
+		[]string{"curl", "-sS", "--fail-with-body", "-K", "-"}, config,
+	)
 	if err != nil {
-		return fmt.Errorf("creating the administrator: %w (stderr: %s)", err, strings.TrimSpace(stderr))
+		return fmt.Errorf("creating the administrator: %w (response: %s)", err, strings.TrimSpace(stdout+" "+stderr))
 	}
 
 	list, listErr := users(ctx, e, o)
 	if listErr != nil {
 		return listErr
 	}
-	if !strings.Contains(list, o.UID) {
+	var people []struct {
+		UID string `json:"uid"`
+	}
+	if err := json.Unmarshal([]byte(list), &people); err != nil {
+		return fmt.Errorf("parsing the user list: %w (response: %s)", err, strings.TrimSpace(list))
+	}
+	found := false
+	for _, person := range people {
+		if person.UID == o.UID {
+			found = true
+			break
+		}
+	}
+	if !found {
 		return fmt.Errorf("administrator %q is not present after creation (create said %q; list %q)",
 			o.UID, strings.TrimSpace(stdout), strings.TrimSpace(list))
 	}
 	return nil
 }
 
+// curlQuote quotes a value for a curl config file, which uses C-style
+// backslash escapes inside double quotes.
+func curlQuote(value string) string {
+	replacer := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\t", `\t`,
+	)
+	return `"` + replacer.Replace(value) + `"`
+}
+
+func curlHeader(name, value string) string {
+	return "header = " + curlQuote(name+": "+value) + "\n"
+}
+
 func users(ctx context.Context, e Execer, o AdminOptions) (string, error) {
-	stdout, stderr, err := e.Exec(ctx, o.TerminalNamespace, o.TerminalPod, o.TerminalContainer, []string{
-		"curl", "-sS", strings.TrimRight(o.APIURL, "/") + "/api/users",
-		"-H", "X-Naslos-Proxy-Secret: " + o.ProxySecret,
-		"-H", "Remote-User: " + o.UID,
-		"-H", "Remote-Groups: naslos_admins",
-	})
+	config := "url = " + curlQuote(strings.TrimRight(o.APIURL, "/")+"/api/users") + "\n" +
+		curlHeader("X-Naslos-Proxy-Secret", o.ProxySecret) +
+		curlHeader("Remote-User", o.UID) +
+		curlHeader("Remote-Groups", "naslos_admins")
+	stdout, stderr, err := e.ExecWithStdin(
+		ctx, o.TerminalNamespace, o.TerminalPod, o.TerminalContainer,
+		[]string{"curl", "-sS", "--fail-with-body", "-K", "-"}, config,
+	)
 	if err != nil {
 		return "", fmt.Errorf("listing users: %w (stderr: %s)", err, strings.TrimSpace(stderr))
 	}

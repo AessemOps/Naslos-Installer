@@ -65,11 +65,12 @@ func lastEvent(t *testing.T, out string) map[string]any {
 }
 
 func TestDryRunCompletes(t *testing.T) {
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
 	dir := writePack(t, ExpectedTalosVersion)
 	var buf bytes.Buffer
 	err := run([]string{
 		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
-		"--admin-user", "admin", "--admin-password", "Correct1",
+		"--admin-user", "admin",
 		"--dry-run", "--pack-dir", dir, "--state-dir", t.TempDir(),
 	}, &buf)
 	if err != nil {
@@ -82,12 +83,13 @@ func TestDryRunCompletes(t *testing.T) {
 }
 
 func TestDryRunWritesMachineConfig(t *testing.T) {
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
 	dir := writePack(t, ExpectedTalosVersion)
 	stateDir := t.TempDir()
 	var buf bytes.Buffer
 	if err := run([]string{
 		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
-		"--admin-user", "admin", "--admin-password", "Correct1",
+		"--admin-user", "admin",
 		"--dry-run", "--pack-dir", dir, "--state-dir", stateDir,
 	}, &buf); err != nil {
 		t.Fatalf("run: %v", err)
@@ -102,10 +104,11 @@ func TestDryRunWritesMachineConfig(t *testing.T) {
 }
 
 func TestInvalidInputFailsBeforeNode(t *testing.T) {
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
 	var buf bytes.Buffer
 	err := run([]string{
 		"--node-ip", "not-an-ip", "--domain", "naslos.local",
-		"--admin-user", "admin", "--admin-password", "Correct1",
+		"--admin-user", "admin",
 		"--dry-run", "--state-dir", t.TempDir(),
 	}, &buf)
 	if err == nil {
@@ -118,14 +121,72 @@ func TestInvalidInputFailsBeforeNode(t *testing.T) {
 }
 
 func TestPackVersionSkewRefused(t *testing.T) {
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
 	dir := writePack(t, "v9.9.9")
 	var buf bytes.Buffer
 	err := run([]string{
 		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
-		"--admin-user", "admin", "--admin-password", "Correct1",
+		"--admin-user", "admin",
 		"--dry-run", "--pack-dir", dir, "--state-dir", t.TempDir(),
 	}, &buf)
 	if err == nil || !strings.Contains(err.Error(), "talosVersion") {
 		t.Fatalf("want version skew error, got %v", err)
+	}
+}
+
+func TestParseReadsThePasswordFromEnv(t *testing.T) {
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
+	opts, err := parse([]string{
+		"--node-ip", "10.0.0.1",
+		"--domain", "naslos.local",
+		"--admin-user", "admin",
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if opts.input.AdminPassword != "Correct1" {
+		t.Fatalf("password = %q", opts.input.AdminPassword)
+	}
+	if _, still := os.LookupEnv("NASLOS_ADMIN_PASSWORD"); still {
+		t.Fatal("the password env var must be unset after it is read")
+	}
+}
+
+func TestParseRejectsTheRemovedArgvPassword(t *testing.T) {
+	_, err := parse([]string{
+		"--node-ip", "10.0.0.1",
+		"--domain", "naslos.local",
+		"--admin-user", "admin",
+		"--admin-password", "Correct1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Fatalf("want a removed-flag error, got %v", err)
+	}
+}
+
+func TestParseReadsThePasswordFromStdin(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := os.Stdin
+	os.Stdin = r
+	defer func() { os.Stdin = old }()
+	go func() {
+		_, _ = w.WriteString("Correct1\n")
+		_ = w.Close()
+	}()
+
+	opts, err := parse([]string{
+		"--node-ip", "10.0.0.1",
+		"--domain", "naslos.local",
+		"--admin-user", "admin",
+		"--admin-password-stdin",
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if opts.input.AdminPassword != "Correct1" {
+		t.Fatalf("password = %q", opts.input.AdminPassword)
 	}
 }
