@@ -137,3 +137,43 @@ func TestExtract(t *testing.T) {
 		}
 	}
 }
+
+func TestAnUnlistedMemberIsRefused(t *testing.T) {
+	fsys := testPack(t, func(_ *Metadata, members map[string][]byte) {
+		// Added after the checksums were computed: a chart hook that Extract
+		// would write and Helm would run.
+		members["templates/hook.yaml"] = []byte("kind: Job\n")
+	})
+	p, err := Load(fsys, testTalos, testSchematic)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := p.Verify(); err == nil ||
+		!strings.Contains(err.Error(), "not listed in metadata.checksums") {
+		t.Fatalf("want an unlisted-member error, got %v", err)
+	}
+}
+
+func TestASymlinkedMemberIsRefused(t *testing.T) {
+	fsys := testPack(t, nil)
+	dir := t.TempDir()
+	for name, file := range fsys {
+		target := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(target, file.Data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink("/etc/hostname", filepath.Join(dir, "leak.txt")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	p, err := Load(os.DirFS(dir), testTalos, testSchematic)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if err := p.Verify(); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("want a symlink error, got %v", err)
+	}
+}
