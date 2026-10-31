@@ -30,8 +30,20 @@ export interface EngineEvent {
 }
 
 export interface ExitPayload {
+  runId: number;
   code: number | null;
   success: boolean;
+}
+
+// Every output event carries the run it belongs to; a cancelled run's late
+// output must not be shown as part of the retry.
+export interface OutputPayload {
+  runId: number;
+  line: string;
+}
+
+export interface StartedPayload {
+  runId: number;
 }
 
 export interface Handoff {
