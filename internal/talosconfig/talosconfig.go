@@ -49,6 +49,10 @@ func LoadOrCreateBundle(path, talosVersion string) (*secrets.Bundle, bool, error
 		if err := json.Unmarshal(raw, &b); err != nil {
 			return nil, false, fmt.Errorf("parsing persisted Talos secrets: %w", err)
 		}
+		// Clock is `json:"-"`; without it the first certificate generated from
+		// a resumed bundle nil-panics (bundle.Clock.Now()). This made every
+		// retry of an install crash at the Talos config step.
+		b.Clock = secrets.NewClock()
 		if b.Cluster == nil || b.Secrets == nil || b.Certs == nil {
 			return nil, false, errors.New("persisted Talos secrets bundle is incomplete")
 		}
