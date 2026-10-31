@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +16,13 @@ import (
 // the SPDY executor on the client's REST config; a Client built with NewWith
 // (tests) has none and returns an error.
 func (c *Client) Exec(ctx context.Context, namespace, pod, container string, command []string) (string, string, error) {
+	return c.ExecWithStdin(ctx, namespace, pod, container, command, "")
+}
+
+// ExecWithStdin is Exec with a body on stdin. Secrets must travel here rather
+// than in argv: a pod exec request URI (which contains the command) is recorded
+// by the kube-apiserver audit log at the default Metadata level.
+func (c *Client) ExecWithStdin(ctx context.Context, namespace, pod, container string, command []string, stdin string) (string, string, error) {
 	if c.rest == nil {
 		return "", "", fmt.Errorf("exec is not available on this client")
 	}
@@ -26,6 +34,7 @@ func (c *Client) Exec(ctx context.Context, namespace, pod, container string, com
 		VersionedParams(&corev1.PodExecOptions{
 			Container: container,
 			Command:   command,
+			Stdin:     stdin != "",
 			Stdout:    true,
 			Stderr:    true,
 		}, scheme.ParameterCodec)
@@ -35,7 +44,15 @@ func (c *Client) Exec(ctx context.Context, namespace, pod, container string, com
 		return "", "", fmt.Errorf("creating the exec stream: %w", err)
 	}
 	var stdout, stderr bytes.Buffer
-	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{Stdout: &stdout, Stderr: &stderr})
+	var in *strings.Reader
+	if stdin != "" {
+		in = strings.NewReader(stdin)
+	}
+	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdin:  in,
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
 	return stdout.String(), stderr.String(), err
 }
 
