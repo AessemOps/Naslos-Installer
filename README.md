@@ -53,7 +53,7 @@ The engine runs without the desktop shell:
 read -rs NASLOS_ADMIN_PASSWORD && export NASLOS_ADMIN_PASSWORD
 dist/naslos-install \
   --node-ip 192.168.1.117 --domain naslos.local \
-  --admin-user admin \
+  --admin-user admin --install-disk /dev/vda \
   --dry-run
 unset NASLOS_ADMIN_PASSWORD
 ```
@@ -68,7 +68,8 @@ with the **same inputs and state directory** plus `--resume`:
 read -rs NASLOS_ADMIN_PASSWORD && export NASLOS_ADMIN_PASSWORD
 dist/naslos-install \
   --node-ip 192.168.1.117 --domain naslos.local \
-  --admin-user admin --admin-password-stdin --resume
+  --admin-user admin --admin-password-stdin \
+  --install-disk /dev/vda --confirm-wipe /dev/vda --resume
 unset NASLOS_ADMIN_PASSWORD
 ```
 

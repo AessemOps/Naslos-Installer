@@ -34,7 +34,7 @@ with the published `v0.1.0` pack:
 
 ```
 ./dist/naslos-install --node-ip 192.168.1.117 --domain naslos.local \
-  --admin-user admin --admin-password-stdin --state-dir /tmp/naslos-drill-state
+  --admin-user admin --admin-password-stdin --install-disk /dev/vda --state-dir /tmp/naslos-drill-state
 ```
 
 Steps config → pack → preflight → machine-config → talos-config →
@@ -269,7 +269,7 @@ mkdir -p /tmp/pack && tar -xzf dist/naslos-install-pack-0.1.0.tar.gz -C /tmp/pac
 make check
 echo 'Correct1' | go run ./cmd/naslos-install \
   --node-ip 192.168.1.117 --domain naslos.local \
-  --admin-user admin --admin-password-stdin \
+  --admin-user admin --admin-password-stdin --install-disk /dev/vda \
   --dry-run --pack-dir /tmp/pack --state-dir /tmp/installer-state
 ```
 
