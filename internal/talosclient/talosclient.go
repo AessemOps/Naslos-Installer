@@ -108,11 +108,23 @@ func (t *talosAPI) Services(ctx context.Context) (map[string]string, error) {
 
 func (t *talosAPI) Close() error { return t.c.Close() }
 
+// rpcTimeout bounds one Talos RPC. The wait loops below use their own overall
+// deadline, but without this a half-open connection would block one attempt
+// forever and the overall deadline would never be checked.
+const rpcTimeout = 10 * time.Second
+
+func rpcContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, rpcTimeout)
+}
+
 // WaitForAPI polls Version until the node answers or the timeout elapses.
 func WaitForAPI(ctx context.Context, api API, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		if _, err := api.Version(ctx); err == nil {
+		callCtx, cancel := rpcContext(ctx)
+		_, err := api.Version(callCtx)
+		cancel()
+		if err == nil {
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -143,7 +155,10 @@ func Bootstrap(ctx context.Context, api API) error {
 func WaitForServices(ctx context.Context, api API, timeout time.Duration, want ...string) error {
 	deadline := time.Now().Add(timeout)
 	for {
-		if svcs, err := api.Services(ctx); err == nil {
+		callCtx, cancel := rpcContext(ctx)
+		svcs, err := api.Services(callCtx)
+		cancel()
+		if err == nil {
 			allReady := true
 			for _, name := range want {
 				if !strings.Contains(svcs[name], "Running") {

@@ -2,6 +2,7 @@ package k8s
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -17,6 +19,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 )
 
 // testManifest mirrors the shape of the pack's local-path manifest: a
@@ -261,5 +264,23 @@ func readyDeployment(ns, name string, desired, ready int32) *appsv1.Deployment {
 			ReadyReplicas:      ready,
 			UpdatedReplicas:    ready,
 		},
+	}
+}
+
+// A missing RBAC permission will not fix itself; polling it for the whole
+// timeout hides the real error behind "did not become ready".
+func TestWaitFailsFastOnForbidden(t *testing.T) {
+	c, _, core := testClient(t)
+	core.(*k8sfake.Clientset).PrependReactor("get", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(
+			schema.GroupResource{Group: "apps", Resource: "deployments"}, "x", errors.New("rbac denied"))
+	})
+	start := time.Now()
+	err := c.WaitForDeployment(context.Background(), "naslos", "naslos-api", 30*time.Second)
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "forbidden") {
+		t.Fatalf("want a forbidden error, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("the wait should fail fast, took %s", elapsed)
 	}
 }

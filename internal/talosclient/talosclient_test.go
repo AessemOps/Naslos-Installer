@@ -86,3 +86,21 @@ func TestIsAlreadyBootstrapped(t *testing.T) {
 		t.Fatal("unrelated error is not already-bootstrapped")
 	}
 }
+
+// Every poll attempt must carry a deadline: a half-open connection would
+// otherwise block the attempt forever and the overall timeout would never be
+// checked.
+type deadlineAPI struct{ *fakeAPI }
+
+func (deadlineAPI) Version(ctx context.Context) (string, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		return "", errors.New("Version called without a deadline")
+	}
+	return "v1.14.1", nil
+}
+
+func TestWaitForAPIUsesAPerCallDeadline(t *testing.T) {
+	if err := WaitForAPI(context.Background(), &deadlineAPI{fakeAPI: &fakeAPI{}}, time.Second); err != nil {
+		t.Fatalf("WaitForAPI: %v", err)
+	}
+}
