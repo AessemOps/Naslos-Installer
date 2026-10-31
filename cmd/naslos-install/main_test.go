@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/AessemOps/Naslos-Installer/internal/config"
+	"github.com/AessemOps/Naslos-Installer/internal/state"
 )
 
 const testSchematic = "4dd8e3a8b6203d3c14f049da8db4d3bb0d6d3e70c5e89dfcc1e709e81914f63c"
@@ -188,5 +191,30 @@ func TestParseReadsThePasswordFromStdin(t *testing.T) {
 	}
 	if opts.input.AdminPassword != "Correct1" {
 		t.Fatalf("password = %q", opts.input.AdminPassword)
+	}
+}
+
+func TestResumeDecision(t *testing.T) {
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
+	in := config.Input{NodeIP: "192.168.1.117", Domain: "naslos.local", AdminUser: "admin", AdminPassword: "Correct1"}
+
+	if err := resumeDecision(true, nil); err == nil {
+		t.Fatal("resume without a state file must fail")
+	}
+
+	fresh := state.New(in, "0.2.3")
+	fresh.SetStep("pack", state.Done, "")
+	if err := resumeDecision(true, fresh); err == nil {
+		t.Fatal("resume before the Talos config must fail")
+	}
+
+	installed := state.New(in, "0.2.3")
+	installed.SetStep("talos-config", state.Done, "")
+	installed.SetStep("bootstrap", state.Done, "")
+	if err := resumeDecision(true, installed); err != nil {
+		t.Fatalf("a completed state must resume: %v", err)
+	}
+	if err := resumeDecision(false, installed); err == nil {
+		t.Fatal("a plain re-run of an installed state must ask for --resume")
 	}
 }

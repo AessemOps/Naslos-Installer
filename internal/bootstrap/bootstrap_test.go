@@ -26,10 +26,16 @@ func (f *fakeExec) ExecWithStdin(_ context.Context, _, _, _ string, command []st
 }
 
 func TestCreateAdminKeepsSecretsOffArgv(t *testing.T) {
+	gets := 0
 	f := &fakeExec{
 		reply: func(_ []string, stdin string) (string, string, error) {
 			if strings.Contains(stdin, "request = \"POST\"") {
 				return `{"uid":"admin"}`, "", nil
+			}
+			// First the idempotency pre-check, then the post-create check.
+			gets++
+			if gets == 1 {
+				return `[]`, "", nil
 			}
 			return `[{"uid":"admin","groups":["naslos_admins"]}]`, "", nil
 		},
@@ -42,17 +48,17 @@ func TestCreateAdminKeepsSecretsOffArgv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAdmin: %v", err)
 	}
-	if len(f.calls) != 2 {
-		t.Fatalf("want a POST then a GET, got %d calls", len(f.calls))
+	if len(f.calls) != 3 {
+		t.Fatalf("want pre-check, POST, verify; got %d calls", len(f.calls))
 	}
-	argv := strings.Join(f.calls[0], " ")
+	argv := strings.Join(f.calls[1], " ")
 	if argv != "curl -sS --fail-with-body -K -" {
 		t.Fatalf("unexpected argv: %s", argv)
 	}
 	if strings.Contains(argv, "s3cr3t") || strings.Contains(argv, "Correct1") {
 		t.Fatalf("a secret leaked into argv: %s", argv)
 	}
-	post := f.stdins[0]
+	post := f.stdins[1]
 	for _, want := range []string{
 		"header = \"X-Naslos-Proxy-Secret: s3cr3t\"",
 		"header = \"Remote-Groups: naslos_admins\"",
@@ -65,7 +71,7 @@ func TestCreateAdminKeepsSecretsOffArgv(t *testing.T) {
 			t.Fatalf("POST config missing %q:\n%s", want, post)
 		}
 	}
-	if strings.Contains(strings.Join(f.calls[1], " "), "s3cr3t") {
+	if strings.Contains(strings.Join(f.calls[2], " "), "s3cr3t") {
 		t.Fatalf("the secret leaked into the GET argv")
 	}
 }
@@ -113,5 +119,25 @@ func TestGenerateTOTP(t *testing.T) {
 	command := strings.Join(f.calls[0], " ")
 	if !strings.Contains(command, "authelia storage user totp generate admin --issuer naslos.local") {
 		t.Fatalf("unexpected command: %s", command)
+	}
+}
+
+func TestCreateAdminIsIdempotentWhenTheUserAlreadyExists(t *testing.T) {
+	f := &fakeExec{reply: func(_ []string, stdin string) (string, string, error) {
+		if strings.Contains(stdin, "request = \"POST\"") {
+			t.Fatal("an existing administrator must not be POSTed again")
+		}
+		return `[{"uid":"admin"}]`, "", nil
+	}}
+	err := CreateAdmin(context.Background(), f, AdminOptions{
+		UID: "admin", Domain: "naslos.local", Password: "Correct1",
+		ProxySecret: "s3cr3t", APIURL: "http://api",
+		TerminalNamespace: "naslos", TerminalPod: "p", TerminalContainer: "c",
+	})
+	if err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	if len(f.calls) != 1 {
+		t.Fatalf("want only the existence check, got %d calls", len(f.calls))
 	}
 }
