@@ -126,7 +126,7 @@ function runSimulated(input: InstallInput, handlers: RunHandlers): () => void {
       if (item.event) {
         handlers.onEvent(item.event);
         if (item.event.step === 'done') {
-          handlers.onExit({ code: 0, success: true });
+          handlers.onExit({ runId: 0, code: 0, success: true });
           return;
         }
       }
