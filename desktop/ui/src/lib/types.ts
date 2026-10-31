@@ -3,6 +3,7 @@
 export interface InstallInput {
   nodeIp: string;
   domain: string;
+  installDisk: string;
   name: string;
   adminUser: string;
   adminPassword: string;

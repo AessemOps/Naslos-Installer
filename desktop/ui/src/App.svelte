@@ -18,6 +18,7 @@
   let input: InstallInput = emptyInput();
   let phase: Phase = 'form';
   let touched = false;
+  let wipeConfirmed = false;
   let currentStep = '';
   let pct = 0;
   let stepStatus: Record<string, StepState> = {};
@@ -205,6 +206,24 @@
             </div>
 
             <div>
+              <label class="label" for="install-disk">Install disk</label>
+              <input
+                id="install-disk"
+                class="field font-mono"
+                placeholder="/dev/vda"
+                autocomplete="off"
+                bind:value={input.installDisk}
+              />
+              {#if touched && errors.installDisk}
+                <p class="mt-1 text-xs text-rose-400">{errors.installDisk}</p>
+              {:else}
+                <p class="hint mt-1">
+                  The whole disk Talos is written to. Check it on the node; it is never inferred.
+                </p>
+              {/if}
+            </div>
+
+            <div>
               <label class="label" for="admin-user">Administrator username</label>
               <input id="admin-user" class="field font-mono" autocomplete="off" bind:value={input.adminUser} />
               {#if touched && errors.adminUser}<p class="mt-1 text-xs text-rose-400">{errors.adminUser}</p>{/if}
@@ -248,6 +267,7 @@
 
           <dl class="grid gap-3 text-sm sm:grid-cols-2">
             <div><dt class="hint">Node</dt><dd class="font-mono">{input.nodeIp}</dd></div>
+            <div><dt class="hint">Install disk</dt><dd class="font-mono">{input.installDisk}</dd></div>
             <div><dt class="hint">Domain</dt><dd class="font-mono">{input.domain}</dd></div>
             <div><dt class="hint">Advertised name</dt><dd class="font-mono">{input.name || derivedName}</dd></div>
             <div><dt class="hint">Administrator</dt><dd class="font-mono">{input.adminUser}</dd></div>
@@ -256,9 +276,14 @@
           </dl>
 
           <p class="rounded-lg border border-rose-800/60 bg-rose-950/40 p-3 text-xs text-rose-200">
-            The node's install disk (<span class="font-mono">/dev/vda</span>) is overwritten. The
-            engine refuses to re-key an already-installed node, but there is no undo for its existing data.
+            The node's install disk (<span class="font-mono">{input.installDisk}</span>) is overwritten.
+            The engine refuses to re-key an already-installed node, but there is no undo for its existing data.
           </p>
+
+          <label class="flex items-start gap-2 text-sm text-rose-200">
+            <input class="mt-0.5 h-4 w-4 rounded border-rose-700 bg-slate-900" type="checkbox" bind:checked={wipeConfirmed} />
+            <span>I have checked that <span class="font-mono">{input.installDisk}</span> is the intended disk and may be erased.</span>
+          </label>
 
           <p class="hint">
             Need the image?
@@ -267,7 +292,7 @@
 
           <div class="flex justify-between">
             <button class="btn-secondary" type="button" on:click={() => (phase = 'form')}>Back</button>
-            <button class="btn-primary" type="button" on:click={start}>Start install</button>
+            <button class="btn-primary" type="button" on:click={start} disabled={!wipeConfirmed}>Start install</button>
           </div>
         </div>
       {:else if phase === 'progress'}

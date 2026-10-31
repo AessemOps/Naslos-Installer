@@ -40,6 +40,10 @@ export function validate(input: InstallInput): Partial<Record<keyof InstallInput
     errors.domain = 'Each domain label must be lowercase letters, digits or hyphens.';
   }
 
+  if (!/^\/dev\/[A-Za-z0-9._\/-]+$/.test(input.installDisk) || input.installDisk.includes('..')) {
+    errors.installDisk = 'Enter the whole-disk device, e.g. /dev/vda or /dev/nvme0n1.';
+  }
+
   if (!UID_RE.test(input.adminUser)) {
     errors.adminUser = 'Must start with a letter; letters, digits, . _ - only.';
   }
