@@ -23,6 +23,11 @@ jobs:
           cache: true
       - name: gofmt / vet / test
         run: make check
+      # tauri.conf.json, Cargo.toml/lock and package.json must agree; the
+      # release stamps the tag version, but a drifted checkout builds a bundle
+      # whose metadata disagrees with its engine.
+      - name: in-tree versions agree
+        run: ./scripts/check-version.sh
 
   pack-build:
     runs-on: ubuntu-latest
