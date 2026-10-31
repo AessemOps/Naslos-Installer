@@ -14,13 +14,16 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	embeddedpack "github.com/AessemOps/Naslos-Installer/installpack"
@@ -95,6 +98,12 @@ func run(args []string, stdout io.Writer) error {
 		return em.Fail("pack", "install pack checksum verification failed", err.Error())
 	}
 
+	unlock, err := state.Lock(opts.stateDir)
+	if err != nil {
+		return em.Fail("state", "another installer is running", err.Error())
+	}
+	defer unlock()
+
 	statePath := filepath.Join(opts.stateDir, "state.json")
 	st, err := state.Load(statePath)
 	if err != nil {
@@ -105,6 +114,9 @@ func run(args []string, stdout io.Writer) error {
 	} else if st.Input.NodeIP != opts.input.NodeIP {
 		return em.Fail("state", "existing state targets a different node",
 			fmt.Sprintf("state node %s, requested %s", st.Input.NodeIP, opts.input.NodeIP))
+	} else {
+		// A re-run must not keep the first run's domain/name/password.
+		st.Input = opts.input
 	}
 	st.SetStep("pack", state.Done, pack.Metadata().NaslosVersion)
 	if err := st.Save(statePath); err != nil {
@@ -528,7 +540,8 @@ func packFS(dir string) (fs.FS, error) {
 
 func parse(args []string) (options, error) {
 	var o options
-	var addResolver, noJSON bool
+	var addResolver, noJSON, adminStdin bool
+	var deprecatedPassword string
 
 	fs := flag.NewFlagSet("naslos-install", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -536,7 +549,10 @@ func parse(args []string) (options, error) {
 	fs.StringVar(&o.input.Domain, "domain", "", "local domain / appliance name (required)")
 	fs.StringVar(&o.input.Name, "name", "", "advertised SMB/mDNS name (default: domain's first label)")
 	fs.StringVar(&o.input.AdminUser, "admin-user", "", "first administrator username (required)")
-	fs.StringVar(&o.input.AdminPassword, "admin-password", "", "administrator password (required)")
+	fs.BoolVar(&adminStdin, "admin-password-stdin", false, "read the administrator password from stdin (one line)")
+	// Kept only so an older caller gets a clear error instead of "flag provided
+	// but not defined"; it must never accept the value.
+	fs.StringVar(&deprecatedPassword, "admin-password", "", "removed: the password is visible in the process list")
 	fs.BoolVar(&addResolver, "add-resolver", false, "add the name to the local hosts file (best effort)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "validate inputs and the pack, then stop before touching the node")
 	fs.BoolVar(&noJSON, "no-json-progress", false, "write human-readable progress instead of NDJSON")
@@ -547,6 +563,21 @@ func parse(args []string) (options, error) {
 	fs.Usage = func() {}
 	if err := fs.Parse(args); err != nil {
 		return o, err
+	}
+	if deprecatedPassword != "" {
+		return o, fmt.Errorf("--admin-password was removed because it is visible in the process list; use --admin-password-stdin or NASLOS_ADMIN_PASSWORD")
+	}
+	if o.input.AdminPassword == "" {
+		if v, ok := os.LookupEnv("NASLOS_ADMIN_PASSWORD"); ok && v != "" {
+			o.input.AdminPassword = v
+			_ = os.Unsetenv("NASLOS_ADMIN_PASSWORD")
+		} else if adminStdin {
+			line, readErr := bufio.NewReader(os.Stdin).ReadString('\n')
+			if readErr != nil && !errors.Is(readErr, io.EOF) {
+				return o, fmt.Errorf("reading the administrator password from stdin: %w", readErr)
+			}
+			o.input.AdminPassword = strings.TrimRight(line, "\r\n")
+		}
 	}
 	// --json-progress is on by default; keep the flag explicit for the contract,
 	// while `--no-json-progress` is the human-readable escape hatch.

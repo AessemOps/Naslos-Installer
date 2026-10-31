@@ -3,6 +3,7 @@ package state
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/AessemOps/Naslos-Installer/internal/config"
@@ -59,4 +60,54 @@ func TestLoadRejectsWrongVersion(t *testing.T) {
 	if _, err := Load(path); err == nil {
 		t.Fatal("want version error")
 	}
+}
+
+func TestPasswordIsNeverPersisted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s := New(config.Input{NodeIP: "10.0.0.1", AdminPassword: "Correct1"}, "0.1.0")
+	if err := s.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "Correct1") || strings.Contains(strings.ToLower(string(raw)), "adminpassword") {
+		t.Fatalf("the administrator password was persisted:\n%s", raw)
+	}
+}
+
+func TestLoadScrubsALegacyPassword(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	legacy := `{"version":1,"input":{"NodeIP":"10.0.0.1","AdminPassword":"Correct1"},"createdAt":"2026-01-01T00:00:00Z"}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "Correct1") {
+		t.Fatalf("a legacy password was not scrubbed:\n%s", raw)
+	}
+}
+
+func TestLockIsExclusive(t *testing.T) {
+	dir := t.TempDir()
+	unlock, err := Lock(dir)
+	if err != nil {
+		t.Fatalf("first Lock: %v", err)
+	}
+	if _, err := Lock(dir); err == nil {
+		t.Fatal("a second engine acquired the same state directory")
+	}
+	unlock()
+	unlock2, err := Lock(dir)
+	if err != nil {
+		t.Fatalf("Lock after release: %v", err)
+	}
+	unlock2()
 }

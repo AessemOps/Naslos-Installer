@@ -19,7 +19,7 @@ type Input struct {
 	Domain        string
 	Name          string // advertised SMB/mDNS name; defaults to the domain's first label
 	AdminUser     string
-	AdminPassword string
+	AdminPassword string `json:"-"`
 	AddResolver   bool
 }
 

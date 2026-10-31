@@ -7,22 +7,28 @@ import (
 )
 
 type fakeExec struct {
-	calls [][]string
-	reply func(command []string) (string, string, error)
+	calls  [][]string
+	stdins []string
+	reply  func(command []string, stdin string) (string, string, error)
 }
 
 func (f *fakeExec) Exec(_ context.Context, _, _, _ string, command []string) (string, string, error) {
+	return f.ExecWithStdin(context.Background(), "", "", "", command, "")
+}
+
+func (f *fakeExec) ExecWithStdin(_ context.Context, _, _, _ string, command []string, stdin string) (string, string, error) {
 	f.calls = append(f.calls, command)
+	f.stdins = append(f.stdins, stdin)
 	if f.reply != nil {
-		return f.reply(command)
+		return f.reply(command, stdin)
 	}
 	return "", "", nil
 }
 
-func TestCreateAdminPostsThenVerifies(t *testing.T) {
+func TestCreateAdminKeepsSecretsOffArgv(t *testing.T) {
 	f := &fakeExec{
-		reply: func(command []string) (string, string, error) {
-			if strings.Contains(strings.Join(command, " "), "-X POST") {
+		reply: func(_ []string, stdin string) (string, string, error) {
+			if strings.Contains(stdin, "request = \"POST\"") {
 				return `{"uid":"admin"}`, "", nil
 			}
 			return `[{"uid":"admin","groups":["naslos_admins"]}]`, "", nil
@@ -39,32 +45,64 @@ func TestCreateAdminPostsThenVerifies(t *testing.T) {
 	if len(f.calls) != 2 {
 		t.Fatalf("want a POST then a GET, got %d calls", len(f.calls))
 	}
-	post := strings.Join(f.calls[0], " ")
-	if !strings.Contains(post, "-X POST") || !strings.Contains(post, "/api/users") {
-		t.Fatalf("unexpected POST command: %s", post)
+	argv := strings.Join(f.calls[0], " ")
+	if argv != "curl -sS --fail-with-body -K -" {
+		t.Fatalf("unexpected argv: %s", argv)
 	}
-	if !strings.Contains(post, "X-Naslos-Proxy-Secret: s3cr3t") || !strings.Contains(post, "Remote-Groups: naslos_admins") {
-		t.Fatalf("POST is missing owner headers: %s", post)
+	if strings.Contains(argv, "s3cr3t") || strings.Contains(argv, "Correct1") {
+		t.Fatalf("a secret leaked into argv: %s", argv)
 	}
-	if !strings.Contains(post, `"groups":["naslos_admins"]`) || !strings.Contains(post, `"email":"admin@naslos.local"`) {
-		t.Fatalf("POST body is wrong: %s", post)
+	post := f.stdins[0]
+	for _, want := range []string{
+		"header = \"X-Naslos-Proxy-Secret: s3cr3t\"",
+		"header = \"Remote-Groups: naslos_admins\"",
+		"naslos_admins",
+		"admin@naslos.local",
+		"Correct1",
+		"request = \"POST\"",
+	} {
+		if !strings.Contains(post, want) {
+			t.Fatalf("POST config missing %q:\n%s", want, post)
+		}
 	}
-	if !strings.HasPrefix(strings.Join(f.calls[1], " "), "curl -sS http") {
-		t.Fatalf("GET command should fetch /api/users: %s", strings.Join(f.calls[1], " "))
+	if strings.Contains(strings.Join(f.calls[1], " "), "s3cr3t") {
+		t.Fatalf("the secret leaked into the GET argv")
 	}
 }
 
 func TestCreateAdminFailsWhenNotListed(t *testing.T) {
-	f := &fakeExec{reply: func([]string) (string, string, error) { return `[]`, "", nil }}
+	f := &fakeExec{reply: func([]string, string) (string, string, error) { return `[]`, "", nil }}
 	err := CreateAdmin(context.Background(), f, AdminOptions{UID: "admin", Domain: "naslos.local", APIURL: "http://api"})
 	if err == nil || !strings.Contains(err.Error(), "not present") {
 		t.Fatalf("want a not-present error, got %v", err)
 	}
 }
 
+// A substring match accepted "administrator" for uid "admin".
+func TestCreateAdminRequiresTheExactUID(t *testing.T) {
+	f := &fakeExec{reply: func(_ []string, stdin string) (string, string, error) {
+		if strings.Contains(stdin, "request = \"POST\"") {
+			return `{"uid":"admin"}`, "", nil
+		}
+		return `[{"uid":"administrator"}]`, "", nil
+	}}
+	err := CreateAdmin(context.Background(), f, AdminOptions{UID: "admin", Domain: "naslos.local", APIURL: "http://api"})
+	if err == nil || !strings.Contains(err.Error(), "not present") {
+		t.Fatalf("want a not-present error for a different uid, got %v", err)
+	}
+}
+
+func TestCurlQuoteEscapesConfigMetacharacters(t *testing.T) {
+	got := curlQuote("a\"b\\c\nd")
+	want := `"a\"b\\c\nd"`
+	if got != want {
+		t.Fatalf("curlQuote = %s, want %s", got, want)
+	}
+}
+
 func TestGenerateTOTP(t *testing.T) {
 	const out = "Successfully generated TOTP configuration for user 'admin' with URI 'otpauth://totp/naslos.local:admin?algorithm=SHA1&digits=6&issuer=naslos.local&period=30&secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXPJBSWY3DP'"
-	f := &fakeExec{reply: func([]string) (string, string, error) { return out, "", nil }}
+	f := &fakeExec{reply: func([]string, string) (string, string, error) { return out, "", nil }}
 	cfg, err := GenerateTOTP(context.Background(), f, "naslos", "naslos-authelia-0", "authelia", "admin", "naslos.local")
 	if err != nil {
 		t.Fatalf("GenerateTOTP: %v", err)

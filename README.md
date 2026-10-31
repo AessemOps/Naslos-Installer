@@ -50,10 +50,12 @@ make build                 # dist/naslos-install (Talos/schematic from the pack)
 The engine runs without the desktop shell:
 
 ```bash
+read -rs NASLOS_ADMIN_PASSWORD && export NASLOS_ADMIN_PASSWORD
 dist/naslos-install \
   --node-ip 192.168.1.117 --domain naslos.local \
-  --admin-user admin --admin-password 'Correct1' \
+  --admin-user admin \
   --dry-run
+unset NASLOS_ADMIN_PASSWORD
 ```
 
 ## Desktop app
