@@ -100,7 +100,7 @@ jobs:
             goos: linux
             goarch: amd64
             bundle_args: --bundles appimage,deb
-          - os: macos-14
+          - os: macos-15
             runner_os: macos
             target: aarch64-apple-darwin
             goos: darwin
