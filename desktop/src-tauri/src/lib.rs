@@ -21,6 +21,9 @@ use tauri_plugin_shell::ShellExt;
 pub struct InstallInput {
     pub node_ip: String,
     pub domain: String,
+    /// Whole-disk device the node installs to; validated by the engine and
+    /// confirmed with `--confirm-wipe`.
+    pub install_disk: String,
     #[serde(default)]
     pub name: String,
     pub admin_user: String,
@@ -95,6 +98,12 @@ fn start_install(
         input.domain,
         "--admin-user".to_string(),
         input.admin_user,
+        "--install-disk".to_string(),
+        input.install_disk.clone(),
+        // The wizard's confirm screen requires an explicit checkbox, so the
+        // desktop always confirms; the engine still validates it matches.
+        "--confirm-wipe".to_string(),
+        input.install_disk,
         "--admin-password-stdin".to_string(),
         "--json-progress".to_string(),
     ];

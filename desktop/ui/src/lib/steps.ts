@@ -73,6 +73,7 @@ export function emptyInput(): InstallInput {
     nodeIp: '',
     domain: DEFAULT_DOMAIN,
     name: '',
+    installDisk: '',
     adminUser: 'admin',
     adminPassword: '',
     addResolver: false,

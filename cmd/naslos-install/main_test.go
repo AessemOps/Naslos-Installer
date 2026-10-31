@@ -74,7 +74,7 @@ func TestDryRunCompletes(t *testing.T) {
 	err := run([]string{
 		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
 		"--admin-user", "admin",
-		"--dry-run", "--pack-dir", dir, "--state-dir", t.TempDir(),
+		"--install-disk", "/dev/vda", "--dry-run", "--pack-dir", dir, "--state-dir", t.TempDir(),
 	}, &buf)
 	if err != nil {
 		t.Fatalf("dry-run: %v\n%s", err, buf.String())
@@ -93,7 +93,7 @@ func TestDryRunWritesMachineConfig(t *testing.T) {
 	if err := run([]string{
 		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
 		"--admin-user", "admin",
-		"--dry-run", "--pack-dir", dir, "--state-dir", stateDir,
+		"--install-disk", "/dev/vda", "--dry-run", "--pack-dir", dir, "--state-dir", stateDir,
 	}, &buf); err != nil {
 		t.Fatalf("run: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestInvalidInputFailsBeforeNode(t *testing.T) {
 	err := run([]string{
 		"--node-ip", "not-an-ip", "--domain", "naslos.local",
 		"--admin-user", "admin",
-		"--dry-run", "--state-dir", t.TempDir(),
+		"--install-disk", "/dev/vda", "--dry-run", "--state-dir", t.TempDir(),
 	}, &buf)
 	if err == nil {
 		t.Fatal("want validation error")
@@ -130,7 +130,7 @@ func TestPackVersionSkewRefused(t *testing.T) {
 	err := run([]string{
 		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
 		"--admin-user", "admin",
-		"--dry-run", "--pack-dir", dir, "--state-dir", t.TempDir(),
+		"--install-disk", "/dev/vda", "--dry-run", "--pack-dir", dir, "--state-dir", t.TempDir(),
 	}, &buf)
 	if err == nil || !strings.Contains(err.Error(), "talosVersion") {
 		t.Fatalf("want version skew error, got %v", err)
@@ -216,5 +216,45 @@ func TestResumeDecision(t *testing.T) {
 	}
 	if err := resumeDecision(false, installed); err == nil {
 		t.Fatal("a plain re-run of an installed state must ask for --resume")
+	}
+}
+
+func TestValidateInstallDisk(t *testing.T) {
+	for _, bad := range []string{"", "/dev/", "sda", "/dev/sda;rm -rf /", "/dev/../etc/passwd", "/dev/sd a", " /dev/sda"} {
+		if err := validateInstallDisk(bad); err == nil {
+			t.Fatalf("install disk %q must be refused", bad)
+		}
+	}
+	for _, ok := range []string{"/dev/vda", "/dev/nvme0n1", "/dev/disk/by-id/ata-FOO"} {
+		if err := validateInstallDisk(ok); err != nil {
+			t.Fatalf("install disk %q: %v", ok, err)
+		}
+	}
+}
+
+func TestNonDryRunRequiresAWipeConfirmation(t *testing.T) {
+	dir := writePack(t, ExpectedTalosVersion)
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
+	var buf bytes.Buffer
+	err := run([]string{
+		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
+		"--admin-user", "admin",
+		"--install-disk", "/dev/vda",
+		"--pack-dir", dir, "--state-dir", t.TempDir(),
+	}, &buf)
+	if err == nil || !strings.Contains(err.Error(), "not confirmed") {
+		t.Fatalf("want a confirmation error, got %v", err)
+	}
+
+	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
+	var buf2 bytes.Buffer
+	err = run([]string{
+		"--node-ip", "192.168.1.117", "--domain", "naslos.local",
+		"--admin-user", "admin",
+		"--install-disk", "/dev/vda", "--confirm-wipe", "/dev/sdb",
+		"--pack-dir", dir, "--state-dir", t.TempDir(),
+	}, &buf2)
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("want a mismatch error, got %v", err)
 	}
 }

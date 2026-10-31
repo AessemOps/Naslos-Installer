@@ -68,6 +68,8 @@ type options struct {
 	jsonProgress bool
 	dryRun       bool
 	resume       bool
+	installDisk  string
+	confirmWipe  string
 }
 
 func run(args []string, stdout io.Writer) error {
@@ -86,6 +88,17 @@ func run(args []string, stdout io.Writer) error {
 
 	if err := opts.input.Validate(); err != nil {
 		return em.Fail("config", "invalid install inputs", err.Error())
+	}
+	if err := validateInstallDisk(opts.installDisk); err != nil {
+		return em.Fail("config", "invalid install disk", err.Error())
+	}
+	if opts.confirmWipe != "" && opts.confirmWipe != opts.installDisk {
+		return em.Fail("config", "wipe confirmation does not match",
+			fmt.Sprintf("--confirm-wipe %q must equal --install-disk %q", opts.confirmWipe, opts.installDisk))
+	}
+	if !opts.dryRun && opts.confirmWipe == "" {
+		return em.Fail("config", "the install disk is not confirmed",
+			"re-run with --confirm-wipe="+opts.installDisk+" once you have checked the device")
 	}
 	if err := em.Step("config", "Inputs validated", 5); err != nil {
 		return err
@@ -188,7 +201,7 @@ func run(args []string, stdout io.Writer) error {
 	}
 	rendered, err := pack.RenderMachineConfig(map[string]string{
 		"NODE_SUBNET":  subnet,
-		"INSTALL_DISK": installDisk,
+		"INSTALL_DISK": opts.installDisk,
 	})
 	if err != nil {
 		return em.Fail("machine-config", "cannot render the machine config", err.Error())
@@ -220,7 +233,7 @@ func run(args []string, stdout io.Writer) error {
 		ClusterName:  "naslos",
 		NodeIP:       opts.input.NodeIP,
 		TalosVersion: pack.Metadata().TalosVersion,
-		InstallDisk:  installDisk,
+		InstallDisk:  opts.installDisk,
 	}, rendered, bundle)
 	if err != nil {
 		return em.Fail("talos-config", "cannot generate the Talos config", err.Error())
@@ -594,7 +607,24 @@ func dirExists(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-const installDisk = "/dev/vda"
+// validateInstallDisk refuses anything that is not a plain device path. It
+// cannot prove the device exists (the node is remote) or that it is not the
+// boot disk; that is why the operator must also repeat it with --confirm-wipe.
+func validateInstallDisk(disk string) error {
+	if disk == "" {
+		return fmt.Errorf("--install-disk is required (for example /dev/vda or /dev/nvme0n1)")
+	}
+	if !strings.HasPrefix(disk, "/dev/") || disk == "/dev/" {
+		return fmt.Errorf("install disk %q must be an absolute path under /dev/", disk)
+	}
+	if disk != strings.TrimSpace(disk) || strings.ContainsAny(disk, " \t\r\n") {
+		return fmt.Errorf("install disk %q must not contain whitespace", disk)
+	}
+	if strings.Contains(disk, "..") || strings.ContainsAny(disk, ";&|$`<>()*?[]{}\"'") {
+		return fmt.Errorf("install disk %q contains an unsafe character", disk)
+	}
+	return nil
+}
 
 var preflightTimeout = 5 * time.Second
 
@@ -648,6 +678,8 @@ func parse(args []string) (options, error) {
 	fs.BoolVar(&addResolver, "add-resolver", false, "add the name to the local hosts file (best effort)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "validate inputs and the pack, then stop before touching the node")
 	fs.BoolVar(&o.resume, "resume", false, "continue a previously interrupted install of an already-installed node")
+	fs.StringVar(&o.installDisk, "install-disk", "", "disk Talos installs to, e.g. /dev/vda (required; never inferred)")
+	fs.StringVar(&o.confirmWipe, "confirm-wipe", "", "repeat --install-disk to confirm erasing it (required unless --dry-run)")
 	fs.BoolVar(&noJSON, "no-json-progress", false, "write human-readable progress instead of NDJSON")
 	fs.StringVar(&o.packDir, "pack-dir", "", "use a pack directory instead of the embedded pack")
 	fs.StringVar(&o.stateDir, "state-dir", "", "state directory (default: user config dir)")
