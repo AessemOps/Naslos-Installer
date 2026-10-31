@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
+  DiskInfo,
   EngineEvent,
   ExitPayload,
   InstallInput,
@@ -29,6 +30,18 @@ export function parseLine(line: string): EngineEvent | null {
   } catch {
     return null;
   }
+}
+
+// listDisks asks the engine for the node's whole disks. It writes nothing and
+// is available before an install starts; the browser demo returns a mock list.
+export async function listDisks(nodeIp: string): Promise<DiskInfo[]> {
+  if (!isTauri()) {
+    return [
+      { device: '/dev/vda', size: 32 * 1024 ** 3, model: 'demo disk', rotational: false, readonly: false, cdrom: false },
+      { device: '/dev/sdb', size: 1024 ** 4, model: 'demo disk (spare)', rotational: true, readonly: false, cdrom: false },
+    ];
+  }
+  return invoke<DiskInfo[]>('list_disks', { nodeIp });
 }
 
 // runInstall starts the install and returns a cancel function. Cancelling kills
