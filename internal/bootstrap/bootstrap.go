@@ -46,6 +46,14 @@ func CreateAdmin(ctx context.Context, e Execer, o AdminOptions) error {
 		return err
 	}
 
+	// A retry (or a resume after the admin step) must not POST a second time.
+	// If the exact uid is already listed, this work is done.
+	if existing, err := users(ctx, e, o); err == nil {
+		if present, parseErr := hasUID(existing, o.UID); parseErr == nil && present {
+			return nil
+		}
+	}
+
 	api := strings.TrimRight(o.APIURL, "/")
 
 	// The password and proxy secret go through curl's config on stdin. Putting
@@ -70,24 +78,32 @@ func CreateAdmin(ctx context.Context, e Execer, o AdminOptions) error {
 	if listErr != nil {
 		return listErr
 	}
-	var people []struct {
-		UID string `json:"uid"`
-	}
-	if err := json.Unmarshal([]byte(list), &people); err != nil {
+	found, err := hasUID(list, o.UID)
+	if err != nil {
 		return fmt.Errorf("parsing the user list: %w (response: %s)", err, strings.TrimSpace(list))
-	}
-	found := false
-	for _, person := range people {
-		if person.UID == o.UID {
-			found = true
-			break
-		}
 	}
 	if !found {
 		return fmt.Errorf("administrator %q is not present after creation (create said %q; list %q)",
 			o.UID, strings.TrimSpace(stdout), strings.TrimSpace(list))
 	}
 	return nil
+}
+
+// hasUID reports whether the JSON user list contains an entry whose uid is
+// exactly uid. A substring check accepted "administrator" for "admin".
+func hasUID(list, uid string) (bool, error) {
+	var people []struct {
+		UID string `json:"uid"`
+	}
+	if err := json.Unmarshal([]byte(list), &people); err != nil {
+		return false, err
+	}
+	for _, person := range people {
+		if person.UID == uid {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // curlQuote quotes a value for a curl config file, which uses C-style

@@ -58,6 +58,26 @@ dist/naslos-install \
 unset NASLOS_ADMIN_PASSWORD
 ```
 
+### Resume an interrupted install
+
+`state.json` records each milestone. If the engine stops after the node is
+installed (a failed Helm deploy, a lost connection, a cancelled run), re-run it
+with the **same inputs and state directory** plus `--resume`:
+
+```bash
+read -rs NASLOS_ADMIN_PASSWORD && export NASLOS_ADMIN_PASSWORD
+dist/naslos-install \
+  --node-ip 192.168.1.117 --domain naslos.local \
+  --admin-user admin --admin-password-stdin --resume
+unset NASLOS_ADMIN_PASSWORD
+```
+
+Resume verifies the persisted `talosconfig` actually authenticates to the node
+before touching it, then skips the steps already recorded as done (bootstrapping,
+storage, Helm, administrator, TOTP). Administrator creation is idempotent: an
+existing exact uid is not POSTed again. A state that never reached an installed
+node is refused, as is re-running an installed state without `--resume`.
+
 ## Desktop app
 
 `desktop/` is the Tauri v2 shell around the engine with a Svelte 5 wizard

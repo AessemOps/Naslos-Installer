@@ -100,7 +100,7 @@ before the namespace PSA label, so the first apply logs a non-fatal
 | `internal/installpack` | parse `metadata.json`, sha256-verify every member, refuse talosVersion/schematicId skew, render `{{NODE_SUBNET}}`/`{{INSTALL_DISK}}`, read members, extract | unit tests + real `0.1.0` pack |
 | `internal/otpauth` | parse Authelia's `otpauth://` output (base32 + >20-byte secret) | unit tests |
 | `internal/preflight` | classify node: `:6443` => installed, else `:50000` => maintenance | unit tests |
-| `internal/state` | `state.json` (0600), resumable step status | unit tests |
+| `internal/state` | `state.json` (0600), resumable step status, exclusive lock | unit tests |
 | `internal/talosconfig` | persist/reuse Talos secrets bundle (never re-key), generate control plane from the pack patch via `pkg/machinery`, skip `UnattendedInstallConfig`, fill talosconfig endpoints | unit tests + parity vs `talosctl gen config` |
 | `internal/talosclient` | maintenance-mode client: apply / wait-for-API / bootstrap / kubeconfig / service states; already-bootstrapped = success | unit tests (fake API) |
 | `internal/k8s` | server-side apply of pack manifests (discovery-backed dynamic client), namespace label merge, default StorageClass annotation, Deployment/StatefulSet/DaemonSet ready waits, SPDY `Exec`, `SecretValue`, `PodForDeployment`, namespace/secret ensure | unit tests (recording dynamic client); exec/pod-resolution exercised live |
