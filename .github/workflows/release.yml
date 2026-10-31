@@ -85,6 +85,19 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "name=Naslos Installer (Naslos ${{ steps.naslos.outputs.tag }})" >> "$GITHUB_OUTPUT"
           echo "Releasing ${tag} (artifacts ${version})"
+      - name: Enforce the shared release version
+        run: |
+          set -euo pipefail
+          naslos="${NASLOS_VERSION#v}"
+          installer="${INSTALLER_VERSION#v}"
+          if [ "$naslos" != "$installer" ]; then
+            echo "::error::Naslos ${NASLOS_VERSION} and installer ${INSTALLER_VERSION} must be the same version; bump the Naslos patch, release the pack, then rebuild the installer at that version"
+            exit 1
+          fi
+          echo "Naslos and installer release versions match: ${naslos}"
+        env:
+          NASLOS_VERSION: ${{ steps.naslos.outputs.tag }}
+          INSTALLER_VERSION: ${{ steps.release.outputs.version }}
 
   # One job per OS produces the installable desktop bundles. The engine sidecar
   # is built for the target triple and bundled inside each package.
