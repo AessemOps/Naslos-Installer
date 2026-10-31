@@ -5,10 +5,10 @@
   import HandoffScreen from './components/Handoff.svelte';
   import ErrorScreen from './components/ErrorScreen.svelte';
   import { emptyInput, shortName, autheliaURL, ISO_URL } from './lib/steps';
-  import { validate } from './lib/validate';
-  import { isTauri, runInstall } from './lib/engine';
+  import { isIPv4, validate } from './lib/validate';
+  import { isTauri, listDisks, runInstall } from './lib/engine';
   import { mergeHandoff, secretFromURI } from './lib/handoff';
-  import type { EngineEvent, ExitPayload, Handoff, InstallInput } from './lib/types';
+  import type { DiskInfo, EngineEvent, ExitPayload, Handoff, InstallInput } from './lib/types';
 
   type Phase = 'form' | 'confirm' | 'progress' | 'handoff' | 'error';
   type StepState = 'running' | 'ok' | 'failed';
@@ -19,6 +19,9 @@
   let phase: Phase = 'form';
   let touched = false;
   let wipeConfirmed = false;
+  let detecting = false;
+  let detectError = '';
+  let diskOptions: DiskInfo[] = [];
   let currentStep = '';
   let pct = 0;
   let stepStatus: Record<string, StepState> = {};
@@ -31,6 +34,27 @@
   $: invalid = Object.keys(errors).length > 0;
   $: derivedName = shortName(input.name, input.domain);
   $: loginUrl = autheliaURL(input.domain);
+
+  async function detectDisks() {
+    detectError = '';
+    if (!isIPv4(input.nodeIp)) {
+      detectError = 'Enter the node IP first.';
+      return;
+    }
+    detecting = true;
+    try {
+      const disks = await listDisks(input.nodeIp);
+      diskOptions = disks.filter((d) => !d.readonly && !d.cdrom);
+      if (!diskOptions.length) detectError = 'The node reported no usable disks.';
+      else if (!diskOptions.some((d) => d.device === input.installDisk)) {
+        input.installDisk = diskOptions[0].device;
+      }
+    } catch (error) {
+      detectError = error instanceof Error ? error.message : String(error);
+    } finally {
+      detecting = false;
+    }
+  }
 
   function pushLog(line: string) {
     if (!line) return;
@@ -207,13 +231,28 @@
 
             <div>
               <label class="label" for="install-disk">Install disk</label>
-              <input
-                id="install-disk"
-                class="field font-mono"
-                placeholder="/dev/vda"
-                autocomplete="off"
-                bind:value={input.installDisk}
-              />
+              <div class="flex gap-2">
+                <input
+                  id="install-disk"
+                  class="field font-mono"
+                  placeholder="/dev/vda"
+                  autocomplete="off"
+                  bind:value={input.installDisk}
+                />
+                <button class="btn-secondary whitespace-nowrap" type="button" on:click={detectDisks} disabled={detecting}>
+                  {detecting ? 'Detecting…' : 'Detect'}
+                </button>
+              </div>
+              {#if diskOptions.length}
+                <select class="field mt-2 font-mono" bind:value={input.installDisk}>
+                  {#each diskOptions as disk}
+                    <option value={disk.device}>
+                      {disk.device} — {(disk.size / 1024 ** 3).toFixed(0)} GiB{disk.model ? ` (${disk.model})` : ''}
+                    </option>
+                  {/each}
+                </select>
+              {/if}
+              {#if detectError}<p class="mt-1 text-xs text-rose-400">{detectError}</p>{/if}
               {#if touched && errors.installDisk}
                 <p class="mt-1 text-xs text-rose-400">{errors.installDisk}</p>
               {:else}

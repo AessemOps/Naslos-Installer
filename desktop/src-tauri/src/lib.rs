@@ -189,6 +189,73 @@ fn start_install(
 }
 
 /// cancel_install kills the running engine, if any.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DiskInfo {
+    device: String,
+    size: u64,
+    model: String,
+    rotational: bool,
+    readonly: bool,
+    cdrom: bool,
+}
+
+/// list_disks runs the engine's read-only `--list-disks` mode and returns the
+/// parsed payload. It is intentionally not tied to EngineState: it writes
+/// nothing and must remain usable before an install starts.
+#[tauri::command]
+async fn list_disks(app: AppHandle, node_ip: String) -> Result<Vec<DiskInfo>, String> {
+    let sidecar = app
+        .shell()
+        .sidecar("naslos-install")
+        .map_err(|e| e.to_string())?;
+    let (mut rx, child) = sidecar
+        .args(["--node-ip", &node_ip, "--list-disks"])
+        .spawn()
+        .map_err(|e| e.to_string())?;
+
+    let collect = async {
+        let mut disks: Vec<DiskInfo> = Vec::new();
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let text = String::from_utf8_lossy(&bytes).to_string();
+                    for line in text.lines() {
+                        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+                            continue;
+                        };
+                        if let Some(err) = value.get("error") {
+                            let msg = err
+                                .get("msg")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("listing disks failed");
+                            return Err(msg.to_string());
+                        }
+                        if let Some(raw) = value
+                            .get("data")
+                            .and_then(|d| d.get("disks"))
+                            .and_then(|d| d.as_str())
+                        {
+                            disks = serde_json::from_str(raw)
+                                .map_err(|e| format!("parsing the disk list: {e}"))?;
+                        }
+                    }
+                }
+                CommandEvent::Terminated(_) => break,
+                _ => {}
+            }
+        }
+        Ok(disks)
+    };
+
+    let result = tokio::time::timeout(std::time::Duration::from_secs(30), collect).await;
+    let _ = child.kill();
+    match result {
+        Ok(inner) => inner,
+        Err(_) => Err("timed out listing the node's disks".into()),
+    }
+}
+
 #[tauri::command]
 fn cancel_install(state: State<'_, EngineState>) -> Result<(), String> {
     if let Some(running) = state.child.lock().map_err(|e| e.to_string())?.take() {
@@ -202,7 +269,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(EngineState::default())
-        .invoke_handler(tauri::generate_handler![start_install, cancel_install])
+        .invoke_handler(tauri::generate_handler![
+            start_install,
+            cancel_install,
+            list_disks
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the Naslos installer");
 }

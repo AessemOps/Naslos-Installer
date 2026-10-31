@@ -1,5 +1,14 @@
 // Types shared with the engine's NDJSON progress protocol (docs/installer-contract.md §5).
 
+export interface DiskInfo {
+  device: string;
+  size: number;
+  model: string;
+  rotational: boolean;
+  readonly: boolean;
+  cdrom: boolean;
+}
+
 export interface InstallInput {
   nodeIp: string;
   domain: string;
