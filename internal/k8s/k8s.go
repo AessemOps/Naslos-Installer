@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
@@ -75,9 +76,11 @@ func NewWith(dyn dynamic.Interface, core kubernetes.Interface, mapper meta.RESTM
 // WaitForDaemonSet polls a DaemonSet until every desired pod is ready.
 func (c *Client) WaitForDaemonSet(ctx context.Context, namespace, name string, timeout time.Duration) error {
 	return poll(ctx, timeout, fmt.Sprintf("DaemonSet %s/%s", namespace, name), func() (bool, error) {
-		ds, err := c.core.AppsV1().DaemonSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ds, err := c.core.AppsV1().DaemonSets(namespace).Get(callCtx, name, metav1.GetOptions{})
+		cancel()
 		if err != nil {
-			return false, nil
+			return false, err
 		}
 		s := ds.Status
 		return s.ObservedGeneration >= ds.Generation &&
@@ -89,9 +92,11 @@ func (c *Client) WaitForDaemonSet(ctx context.Context, namespace, name string, t
 // WaitForDeployment polls a Deployment until all its replicas are ready.
 func (c *Client) WaitForDeployment(ctx context.Context, namespace, name string, timeout time.Duration) error {
 	return poll(ctx, timeout, fmt.Sprintf("Deployment %s/%s", namespace, name), func() (bool, error) {
-		d, err := c.core.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		d, err := c.core.AppsV1().Deployments(namespace).Get(callCtx, name, metav1.GetOptions{})
+		cancel()
 		if err != nil {
-			return false, nil
+			return false, err
 		}
 		desired := int32(1)
 		if d.Spec.Replicas != nil {
@@ -107,9 +112,11 @@ func (c *Client) WaitForDeployment(ctx context.Context, namespace, name string, 
 // WaitForStatefulSet polls a StatefulSet until all its replicas are ready.
 func (c *Client) WaitForStatefulSet(ctx context.Context, namespace, name string, timeout time.Duration) error {
 	return poll(ctx, timeout, fmt.Sprintf("StatefulSet %s/%s", namespace, name), func() (bool, error) {
-		ss, err := c.core.AppsV1().StatefulSets(namespace).Get(ctx, name, metav1.GetOptions{})
+		callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		ss, err := c.core.AppsV1().StatefulSets(namespace).Get(callCtx, name, metav1.GetOptions{})
+		cancel()
 		if err != nil {
-			return false, nil
+			return false, err
 		}
 		desired := int32(1)
 		if ss.Spec.Replicas != nil {
@@ -135,6 +142,11 @@ func poll(ctx context.Context, timeout time.Duration, what string, check func() 
 		}
 		if err != nil {
 			lastErr = err
+			// A permission or auth failure will not fix itself; retrying only
+			// turns a clear RBAC error into a five-minute timeout.
+			if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+				return fmt.Errorf("%s: %w", what, err)
+			}
 		}
 		if time.Now().After(deadline) {
 			if lastErr != nil {
