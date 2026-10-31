@@ -50,11 +50,21 @@ func Build(o Options) (string, error) {
 	name := fmt.Sprintf("naslos-recovery-%s-%s.zip", o.Domain, o.Now.Format("20060102T150405Z"))
 	path := filepath.Join(o.Dir, name)
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	// Write to a temp file and rename: a failure (a missing state member, a
+	// full disk) used to leave a truncated ZIP with the final name, which is
+	// worse than no archive because it looks recoverable.
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("creating %s: %w", path, err)
 	}
-	defer f.Close()
+	complete := false
+	defer func() {
+		_ = f.Close()
+		if !complete {
+			_ = os.Remove(tmp)
+		}
+	}()
 
 	zw := zip.NewWriter(f)
 	write := func(name string, data []byte) error {
@@ -96,6 +106,16 @@ func Build(o Options) (string, error) {
 	if err := zw.Close(); err != nil {
 		return "", fmt.Errorf("finalising %s: %w", path, err)
 	}
+	if err := f.Sync(); err != nil {
+		return "", fmt.Errorf("flushing %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("closing %s: %w", path, err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return "", fmt.Errorf("publishing %s: %w", path, err)
+	}
+	complete = true
 	return path, nil
 }
 

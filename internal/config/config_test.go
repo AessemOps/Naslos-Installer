@@ -68,3 +68,19 @@ func TestShortNameTruncatesLongLabel(t *testing.T) {
 		t.Fatalf("ShortName = %q (len %d)", got, len(got))
 	}
 }
+
+func TestValidateRejectsNonUnicastNodeAddresses(t *testing.T) {
+	for _, ip := range []string{"0.0.0.0", "127.0.0.1", "169.254.10.1", "224.0.0.1", "255.255.255.255"} {
+		in := Input{NodeIP: ip, Domain: "naslos.local", AdminUser: "admin", AdminPassword: "Correct1"}
+		if err := in.Validate(); err == nil {
+			t.Fatalf("node IP %s must be refused", ip)
+		}
+	}
+}
+
+func TestValidateAcceptsALANAddress(t *testing.T) {
+	in := Input{NodeIP: "192.168.1.117", Domain: "naslos.local", AdminUser: "admin", AdminPassword: "Correct1"}
+	if err := in.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
