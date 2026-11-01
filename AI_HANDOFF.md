@@ -24,8 +24,9 @@ detects the link that carries the node IP from the maintenance-mode Talos
 COSI resources (falling back to the first physical link that is up) and
 substitutes `{{INTERFACE}}`. The node was manually recovered (apply `ens3`,
 bootstrap, fetch kubeconfig, mark `bootstrap` done) and the 0.3.0 GUI can be
-retried to finish storage/cert-manager/Helm. The 0.3.1 installer + pack fix
-ships together; see
+retried to finish storage/cert-manager/Helm. The desktop Retry button also now passes `--resume`; the 0.3.0 GUI's Retry
+re-ran the engine without it and could not continue an installed node. The
+0.3.1 installer + pack fix ships together; see
 `.kilo/plans/1793600000001-installer-interface.md`. Version is bumped to 0.3.1
 in this branch; do not publish `naslos-v0.3.1` until the Naslos-Linux 0.3.1
 pack exists.

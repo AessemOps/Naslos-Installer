@@ -33,6 +33,10 @@ predictable interface names.
   machine-config error rather than silently writing the wrong link.
 - `docs/installer-contract.md` documents the third placeholder; the
   `render-installer-template.sh` placeholder guard includes it.
+- The desktop Retry button now passes `--resume`. It previously re-ran the
+  engine without it, so even after fixing the node the retry failed preflight
+  with "node looks already installed". The Tauri command takes an explicit
+  `resume` flag, and the wizard sets it only from the error screen's Retry.
 
 ## Tests
 
