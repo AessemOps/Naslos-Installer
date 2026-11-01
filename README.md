@@ -88,9 +88,12 @@ unset NASLOS_ADMIN_PASSWORD
 
 Resume verifies the persisted `talosconfig` actually authenticates to the node
 before touching it, then skips the steps already recorded as done (bootstrapping,
-storage, Helm, administrator, TOTP). Administrator creation is idempotent: an
-existing exact uid is not POSTed again. A state that never reached an installed
-node is refused, as is re-running an installed state without `--resume`.
+storage, certificate stack, Helm, administrator, TOTP). Administrator creation is
+idempotent: an existing exact uid is not POSTed again. A state that never reached
+an installed node is refused, as is re-running an installed state without
+`--resume`. This is also how an installed node gains a step added by a later
+release: a 0.2.5 install resumes once on 0.2.6 to get cert-manager and the OVH
+webhook without re-keying.
 
 ### Re-key a node (reinstall)
 
@@ -150,7 +153,10 @@ progress/`data` payloads, Talos PKI + control-plane/talosconfig generation via
 `siderolabs/talos/pkg/machinery` (persisted secrets bundle; reuse never re-keys
 a node), the Talos lifecycle (maintenance apply → wait → bootstrap →
 kubeconfig), the cluster storage step (startup CNI wait, local-path provisioner
-server-side apply, PodSecurity label, default StorageClass), the Helm install of
+server-side apply, PodSecurity label, default StorageClass), the certificate
+stack (cert-manager CRDs applied server-side, cert-manager and the OVH DNS-01
+webhook installed from the pack into `cert-manager`, both waited on), the Helm
+install of
 the pack's chart (values merge + engine overrides, pre-created `naslos` +
 `naslos-talosconfig` Secret, explicit workload waits), the first administrator +
 TOTP device (owner API via pod exec, `authelia … totp generate`), a best-effort
