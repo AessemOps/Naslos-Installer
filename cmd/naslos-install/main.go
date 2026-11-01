@@ -281,9 +281,27 @@ func run(args []string, stdout io.Writer) error {
 	if err != nil {
 		return em.Fail("machine-config", "cannot derive the node subnet", err.Error())
 	}
+	// Name the actual link: eth0 is only correct on the VM. A hardcoded eth0 on
+	// hardware with predictable names (ens3, enp…) leaves etcd without an
+	// advertised address and the install dies at the bootstrap step.
+	interfaceName := "eth0"
+	if !opts.dryRun && !st.StepDone("bootstrap") {
+		maintenance, err := talosclient.Dial(ctx, opts.input.NodeIP)
+		if err != nil {
+			return em.Fail("machine-config", "cannot open the Talos API to detect the network interface", err.Error())
+		}
+		callCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		interfaceName, err = maintenance.Interface(callCtx, opts.input.NodeIP)
+		cancel()
+		_ = maintenance.Close()
+		if err != nil {
+			return em.Fail("machine-config", "cannot determine the node's network interface", err.Error())
+		}
+	}
 	rendered, err := pack.RenderMachineConfig(map[string]string{
 		"NODE_SUBNET":  subnet,
 		"INSTALL_DISK": opts.installDisk,
+		"INTERFACE":    interfaceName,
 	})
 	if err != nil {
 		return em.Fail("machine-config", "cannot render the machine config", err.Error())
