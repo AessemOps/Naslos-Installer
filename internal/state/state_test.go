@@ -111,3 +111,35 @@ func TestLockIsExclusive(t *testing.T) {
 	}
 	unlock2()
 }
+
+func TestArchiveMovesTheStateAside(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"state.json", "talosconfig", "kubeconfig", "talos-secrets.json"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	backup, err := Archive(dir)
+	if err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	if backup == "" {
+		t.Fatal("Archive returned no backup directory")
+	}
+	for _, name := range []string{"state.json", "talosconfig", "kubeconfig", "talos-secrets.json"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists in the live state directory", name)
+		}
+		if _, err := os.Stat(filepath.Join(backup, name)); err != nil {
+			t.Fatalf("%s was not moved into the backup: %v", name, err)
+		}
+	}
+	// Nothing left to move: a second call is a no-op, not an error.
+	again, err := Archive(dir)
+	if err != nil {
+		t.Fatalf("second Archive: %v", err)
+	}
+	if again != "" {
+		t.Fatalf("second Archive created %q", again)
+	}
+}

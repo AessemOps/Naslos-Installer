@@ -74,6 +74,7 @@ export function emptyInput(): InstallInput {
     domain: DEFAULT_DOMAIN,
     name: '',
     installDisk: '',
+    reinstall: false,
     adminUser: 'admin',
     adminPassword: '',
     addResolver: false,

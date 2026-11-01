@@ -156,6 +156,14 @@
     failure = { step: currentStep, msg: 'Install cancelled.' };
   }
 
+  function startOver() {
+    // The engine moves the old state into a timestamped backup; nothing is
+    // deleted. Return to the confirmation screen so this stays deliberate.
+    input = { ...input, reinstall: true };
+    failure = null;
+    phase = 'confirm';
+  }
+
   function restart() {
     input = emptyInput();
     touched = false;
@@ -314,6 +322,12 @@
             <div><dt class="hint">Hosts entry</dt><dd>{input.addResolver ? 'yes (best effort)' : 'no'}</dd></div>
           </dl>
 
+          {#if input.reinstall}
+            <p class="rounded-lg border border-amber-800/60 bg-amber-950/40 p-3 text-xs text-amber-200">
+              The saved install state will be moved to a timestamped backup and a new Talos PKI will be
+              generated for this node.
+            </p>
+          {/if}
           <p class="rounded-lg border border-rose-800/60 bg-rose-950/40 p-3 text-xs text-rose-200">
             The node's install disk (<span class="font-mono">{input.installDisk}</span>) is overwritten.
             The engine refuses to re-key an already-installed node, but there is no undo for its existing data.
@@ -365,6 +379,7 @@
           output={failure?.output ?? ''}
           onRetry={start}
           onBack={() => (phase = 'form')}
+          onStartOver={failure?.msg?.includes('--reinstall') ? startOver : undefined}
         />
       {/if}
     </div>

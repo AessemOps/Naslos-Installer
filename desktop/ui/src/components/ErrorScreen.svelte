@@ -4,6 +4,8 @@
   export let output = '';
   export let onRetry: () => void;
   export let onBack: () => void;
+  /// Offered only when the failure is the stale-state dead end.
+  export let onStartOver: (() => void) | undefined = undefined;
 </script>
 
 <div class="space-y-6">
@@ -30,6 +32,9 @@
 
   <div class="flex justify-center gap-3">
     <button class="btn-secondary" type="button" on:click={onBack}>Back</button>
+    {#if onStartOver}
+      <button class="btn-secondary" type="button" on:click={onStartOver}>Start over</button>
+    {/if}
     <button class="btn-primary" type="button" on:click={onRetry}>Retry</button>
   </div>
 </div>

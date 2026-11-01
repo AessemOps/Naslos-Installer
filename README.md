@@ -92,6 +92,27 @@ storage, Helm, administrator, TOTP). Administrator creation is idempotent: an
 existing exact uid is not POSTed again. A state that never reached an installed
 node is refused, as is re-running an installed state without `--resume`.
 
+### Re-key a node (reinstall)
+
+If the saved state describes a completed install but the node is back in
+maintenance mode (re-imaged, wiped, or a different node at the same address),
+the engine refuses to guess. Pass `--reinstall`: it moves the engine's state
+files into `<state-dir>/stale-<timestamp>/` and starts a fresh install with a
+new PKI. Nothing is deleted, so the old kubeconfig/talosconfig remain available
+under that backup directory.
+
+```bash
+read -rs NASLOS_ADMIN_PASSWORD && export NASLOS_ADMIN_PASSWORD
+dist/naslos-install \
+  --node-ip 192.168.1.117 --domain naslos.local \
+  --admin-user admin --admin-password-stdin \
+  --install-disk /dev/vda --confirm-wipe /dev/vda --reinstall
+unset NASLOS_ADMIN_PASSWORD
+```
+
+The desktop offers the same as a **Start over** button on the error screen when
+it sees this state/node mismatch.
+
 ## Desktop app
 
 `desktop/` is the Tauri v2 shell around the engine with a Svelte 5 wizard

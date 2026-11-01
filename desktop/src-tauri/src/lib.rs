@@ -24,6 +24,9 @@ pub struct InstallInput {
     /// Whole-disk device the node installs to; validated by the engine and
     /// confirmed with `--confirm-wipe`.
     pub install_disk: String,
+    /// Move the saved state aside and install fresh.
+    #[serde(default)]
+    pub reinstall: bool,
     #[serde(default)]
     pub name: String,
     pub admin_user: String,
@@ -103,10 +106,13 @@ fn start_install(
         // The wizard's confirm screen requires an explicit checkbox, so the
         // desktop always confirms; the engine still validates it matches.
         "--confirm-wipe".to_string(),
-        input.install_disk,
+        input.install_disk.clone(),
         "--admin-password-stdin".to_string(),
         "--json-progress".to_string(),
     ];
+    if input.reinstall {
+        args.push("--reinstall".to_string());
+    }
     if !input.name.trim().is_empty() {
         args.push("--name".to_string());
         args.push(input.name);

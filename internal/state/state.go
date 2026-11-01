@@ -152,6 +152,45 @@ func (s *State) Save(path string) error {
 	return os.Rename(tmpName, path)
 }
 
+// Archive moves the engine's state files into a timestamped subdirectory so a
+// fresh install can start without deleting the old PKI/kubeconfig. It returns
+// the backup directory, or "" when there was nothing to move.
+func Archive(dir string) (string, error) {
+	names := []string{
+		"state.json",
+		"state.json.bak",
+		"talosconfig",
+		"controlplane.yaml",
+		"kubeconfig",
+		"machine-config.yaml",
+		"talos-secrets.json",
+	}
+	present := false
+	for _, name := range names {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			present = true
+			break
+		}
+	}
+	if !present {
+		return "", nil
+	}
+	backup := filepath.Join(dir, "stale-"+time.Now().UTC().Format("20060102T150405Z"))
+	if err := os.MkdirAll(backup, 0o700); err != nil {
+		return "", err
+	}
+	for _, name := range names {
+		src := filepath.Join(dir, name)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		if err := os.Rename(src, filepath.Join(backup, name)); err != nil {
+			return "", err
+		}
+	}
+	return backup, nil
+}
+
 // Lock takes an exclusive lock for the state directory so two engines cannot
 // drive one install. The returned func releases it. A lock older than 24 h is
 // treated as stale (the engine that created it is gone).
