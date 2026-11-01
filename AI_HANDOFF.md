@@ -26,6 +26,38 @@ without the user's inputs.
 - Working tree clean. `go build ./...`, `go vet ./...`, `go test -race ./...`
   all pass (`make check`).
 
+## Live drill — 2026-11-01 (certificate stack, resumed install)
+
+The 0.2.6 engine added a `cert-manager` step between `storage` and `helm`
+(cert-manager CRDs applied server-side, cert-manager and the OVH DNS-01 webhook
+installed from the pack, both waited on; see
+`Naslos-Linux/.kilo/plans/1793555100000-installer-cert-manager-pack.md`).
+
+Validated by **resuming the existing 0.2.5 install** on `192.168.1.117` with
+the 0.2.5 pack embedded in the local build:
+
+```
+printf '<placeholder-policy-valid>\n' | ./dist/naslos-install \
+  --node-ip 192.168.1.117 --domain naslos.local --admin-user admin \
+  --admin-password-stdin --install-disk /dev/vda --confirm-wipe /dev/vda \
+  --resume --state-dir ~/.config/naslos-install --json-progress
+```
+
+Result: `cert-manager` (chart `cert-manager-v1.18.2`) and
+`cert-manager-webhook-ovh` (0.9.17) both `deployed` in `cert-manager`; the four
+deployments (`cert-manager`, `-cainjector`, `-webhook`, `-webhook-ovh`) 1/1
+Ready; 6 cert-manager CRDs present; `RoleBinding naslos-ovh-webhook-secret-reader`
+in `naslos-apps` bound to `cert-manager/cert-manager-webhook-ovh`; the run then
+skipped every already-done step and completed to `done` without re-keying the
+node or touching its data. No OVH credential is needed at install time (the
+webhook is credential-less); issuing a real certificate still requires OVH
+credentials on the Domains page.
+
+Known gap found during the drill: `Input.Validate` requires a policy-valid
+`--admin-password` even when the `admin` step is already done, so a resume needs
+a throwaway value. A later change should require the password only when the
+admin step is pending.
+
 ## Live drill — 2026-10-03 (validated)
 
 The engine was run against a **freshly booted maintenance Talos VM**
