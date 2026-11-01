@@ -142,8 +142,12 @@ func users(ctx context.Context, e Execer, o AdminOptions) (string, error) {
 // and parses the printed otpauth URI. The binary is exec'd directly (the image
 // is distroless) and the config/DB never leave the pod.
 func GenerateTOTP(ctx context.Context, e Execer, namespace, pod, container, uid, domain string) (*otpauth.Config, error) {
+	// --force: this step only runs while the state says TOTP is not done, so
+	// any existing device is one the operator never received (e.g. a run whose
+	// output was lost). Without it a retry fails with "already has a TOTP
+	// configuration" and the install can never finish.
 	stdout, stderr, err := e.Exec(ctx, namespace, pod, container, []string{
-		"authelia", "storage", "user", "totp", "generate", uid, "--issuer", domain,
+		"authelia", "storage", "user", "totp", "generate", uid, "--issuer", domain, "--force",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("running authelia totp generate: %w (stderr: %s)", err, strings.TrimSpace(stderr))

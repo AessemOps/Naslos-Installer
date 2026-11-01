@@ -73,6 +73,7 @@ type options struct {
 	installDisk  string
 	confirmWipe  string
 	listDisks    bool
+	reinstall    bool
 }
 
 func run(args []string, stdout io.Writer) error {
@@ -163,6 +164,23 @@ func run(args []string, stdout io.Writer) error {
 	}
 	defer unlock()
 
+	// Archive under the lock so two engines cannot move the same files.
+	if opts.reinstall {
+		if opts.resume {
+			return em.Fail("state", "--reinstall and --resume are mutually exclusive", "")
+		}
+		backup, err := state.Archive(opts.stateDir)
+		if err != nil {
+			return em.Fail("state", "cannot move the existing state aside", err.Error())
+		}
+		if backup != "" {
+			if err := em.Progress("state", event.Running, 3,
+				"Saved state moved to "+backup); err != nil {
+				return err
+			}
+		}
+	}
+
 	statePath := filepath.Join(opts.stateDir, "state.json")
 	st, err := state.Load(statePath)
 	if err != nil {
@@ -177,8 +195,8 @@ func run(args []string, stdout io.Writer) error {
 		// A re-run must not keep the first run's domain/name/password.
 		st.Input = opts.input
 	}
-	if err := resumeDecision(opts.resume, st); err != nil {
-		return em.Fail("state", "cannot resume", err.Error())
+	if opts.resume && st == nil {
+		return em.Fail("state", "cannot resume", "--resume needs a state file from the interrupted install")
 	}
 	st.SetStep("pack", state.Done, pack.Metadata().NaslosVersion)
 	if err := st.Save(statePath); err != nil {
@@ -239,6 +257,8 @@ func run(args []string, stdout io.Writer) error {
 			if err := em.Step("preflight", "Node is installed; resuming with the existing state", 20); err != nil {
 				return err
 			}
+		} else if err := resumeDecision(opts.resume, st, nodeState); err != nil {
+			return em.Fail("preflight", "cannot continue with this state", err.Error())
 		}
 		st.SetStep("preflight", state.Done, string(nodeState))
 		if err := st.Save(statePath); err != nil {
@@ -701,9 +721,15 @@ func packFS(dir string) (fs.FS, error) {
 	return os.DirFS(dir), nil
 }
 
-// resumeDecision validates the requested mode against the persisted state.
-// Returning an error here means "do not touch the node".
-func resumeDecision(resume bool, st *state.State) error {
+// resumeDecision validates the requested mode against the persisted state
+// **and the node we actually found**. Returning an error means "do not touch
+// the node".
+//
+// The node state matters: a saved state describing a completed install while
+// the node is sitting in maintenance is a reinstall, not a resume, and must
+// not dead-end the GUI.
+func resumeDecision(resume bool, st *state.State, node preflight.NodeState) error {
+	installedState := st != nil && st.StepDone("bootstrap")
 	if resume {
 		if st == nil {
 			return errors.New("--resume needs a state file from the interrupted install")
@@ -711,12 +737,26 @@ func resumeDecision(resume bool, st *state.State) error {
 		if !st.StepDone("talos-config") {
 			return errors.New("the state never finished the Talos config; this is a fresh install, not a resume")
 		}
+		if node == preflight.Maintenance {
+			return errors.New(
+				"the node is in maintenance but the saved state describes an installed node; " +
+					"pass --reinstall to move the old state aside and install fresh")
+		}
 		return nil
 	}
-	if st != nil && st.StepDone("bootstrap") {
-		return errors.New("this state shows an installed node; pass --resume (or use a new state directory to re-key it)")
+	if !installedState {
+		return nil
 	}
-	return nil
+	switch node {
+	case preflight.Installed:
+		return errors.New("the node is already installed; pass --resume with the state file")
+	case preflight.Maintenance:
+		return errors.New(
+			"the saved state describes an installed node but this node is in maintenance; " +
+				"pass --reinstall to move the old state aside and re-key it")
+	default:
+		return nil
+	}
 }
 
 func parse(args []string) (options, error) {
@@ -737,6 +777,7 @@ func parse(args []string) (options, error) {
 	fs.BoolVar(&addResolver, "add-resolver", false, "add the name to the local hosts file (best effort)")
 	fs.BoolVar(&o.dryRun, "dry-run", false, "validate inputs and the pack, then stop before touching the node")
 	fs.BoolVar(&o.resume, "resume", false, "continue a previously interrupted install of an already-installed node")
+	fs.BoolVar(&o.reinstall, "reinstall", false, "move the saved state aside and install fresh (required when the node is in maintenance but the state says installed)")
 	fs.BoolVar(&o.listDisks, "list-disks", false, "list the node's whole disks and exit (choose one with --install-disk)")
 	fs.StringVar(&o.installDisk, "install-disk", "", "disk Talos installs to, e.g. /dev/vda (required; never inferred)")
 	fs.StringVar(&o.confirmWipe, "confirm-wipe", "", "repeat --install-disk to confirm erasing it (required unless --dry-run)")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -44,16 +45,22 @@ func (c *Client) ExecWithStdin(ctx context.Context, namespace, pod, container st
 		return "", "", fmt.Errorf("creating the exec stream: %w", err)
 	}
 	var stdout, stderr bytes.Buffer
-	var in *strings.Reader
-	if stdin != "" {
-		in = strings.NewReader(stdin)
-	}
-	err = exec.StreamWithContext(ctx, remotecommand.StreamOptions{
-		Stdin:  in,
-		Stdout: &stdout,
-		Stderr: &stderr,
-	})
+	err = exec.StreamWithContext(ctx, streamOptions(stdin, &stdout, &stderr))
 	return stdout.String(), stderr.String(), err
+}
+
+// streamOptions must leave Stdin as a nil interface when there is no stdin.
+// Assigning a nil *strings.Reader produced a non-nil io.Reader, so client-go
+// opened a stdin stream that the kubelet had been told not to expect
+// (PodExecOptions.Stdin=false); stream setup then failed with "Timeout
+// occurred" even though the command itself ran (the TOTP device was created,
+// but its output never reached the engine).
+func streamOptions(stdin string, stdout, stderr io.Writer) remotecommand.StreamOptions {
+	opts := remotecommand.StreamOptions{Stdout: stdout, Stderr: stderr}
+	if stdin != "" {
+		opts.Stdin = strings.NewReader(stdin)
+	}
+	return opts
 }
 
 // SecretValue decodes one key of a Secret.
