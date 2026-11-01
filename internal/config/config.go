@@ -54,8 +54,13 @@ func (in Input) Validate() error {
 	if !uidRE.MatchString(in.AdminUser) {
 		return fmt.Errorf("admin user %q must start with a letter and contain only letters, digits, . _ -", in.AdminUser)
 	}
-	if err := ValidatePassword(in.AdminPassword); err != nil {
-		return err
+	// The password is only needed when the admin step is pending (a resume
+	// after that step must not demand a throwaway value). The engine checks
+	// presence at that point; a non-empty value is still policy-checked here.
+	if in.AdminPassword != "" {
+		if err := ValidatePassword(in.AdminPassword); err != nil {
+			return err
+		}
 	}
 	name := in.ShortName()
 	if name == "" || !nameRE.MatchString(name) {

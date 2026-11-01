@@ -6,6 +6,16 @@ Session-to-session state for `AessemOps/Naslos-Installer`. Companion repo:
 Plan: [`.kilo/plans/desktop-installer-app.md`](.kilo/plans/desktop-installer-app.md).
 Spec: `Naslos-Linux/docs/spec.md` §FR-INSTALL.
 
+## In progress — 0.3.0 pack contract (not released)
+
+The engine now consumes the pack's additive `kubernetesVersion` (passed
+explicitly to `generate.NewInput`; older packs fall back to the machinery
+default), re-runs Helm on `--resume` when the deployed chart is older than the
+pack (with `ResetValues`, so the new pack's images win), and requires the admin
+password only while the `admin` step is pending. This is the bootstrap path from
+0.2.x to the first web-upgradable release; it ships as `naslos-v0.3.0` with the
+Naslos-Linux `v0.3.0` pack (version parity).
+
 ## What this is
 
 The desktop installer (Tauri v2 shell + Svelte wizard) plus the headless Go

@@ -26,11 +26,12 @@ import (
 
 // Inputs parameterise config generation.
 type Inputs struct {
-	ClusterName    string
-	NodeIP         string
-	TalosVersion   string
-	InstallerImage string
-	InstallDisk    string
+	ClusterName       string
+	NodeIP            string
+	TalosVersion      string
+	KubernetesVersion string
+	InstallerImage    string
+	InstallDisk       string
 }
 
 // Result is the generated config material.
@@ -110,7 +111,12 @@ func Generate(in Inputs, patch []byte, bundle *secrets.Bundle) (*Result, error) 
 		opts = append(opts, generate.WithInstallImage(in.InstallerImage))
 	}
 
-	input, err := generate.NewInput(in.ClusterName, endpoint, constants.DefaultKubernetesVersion, opts...)
+	kubernetes := strings.TrimPrefix(in.KubernetesVersion, "v")
+	if kubernetes == "" {
+		// Older packs (before the web-upgrade contract) do not pin it.
+		kubernetes = constants.DefaultKubernetesVersion
+	}
+	input, err := generate.NewInput(in.ClusterName, endpoint, kubernetes, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("preparing config generation: %w", err)
 	}

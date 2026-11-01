@@ -61,6 +61,11 @@ func Install(ctx context.Context, o Options) error {
 		up.Wait = false
 		up.Timeout = o.Timeout
 		up.SkipSchemaValidation = true
+		// The release stores fully merged values, including the previous pack's
+		// image digests. Reset to chart defaults + this pack's values so a
+		// resume/upgrade never keeps an old image (the web upgrader does the
+		// same with --reset-values).
+		up.ResetValues = true
 		if _, err := up.RunWithContext(ctx, o.Release, ch, vals); err != nil {
 			return fmt.Errorf("helm upgrade %s: %w", o.Release, err)
 		}
@@ -91,6 +96,26 @@ func Install(ctx context.Context, o Options) error {
 		return fmt.Errorf("helm install %s: %w", o.Release, err)
 	}
 	return nil
+}
+
+// DeployedVersion returns the chart version currently deployed for a release.
+// The engine uses it on --resume to converge a node installed from an older
+// pack (the bootstrap path for 0.2.x nodes to the first web-upgradable release).
+func DeployedVersion(kubeconfigPath, release, namespace string) (string, error) {
+	cfg := new(action.Configuration)
+	getter := genericclioptions.NewConfigFlags(false)
+	getter.KubeConfig = &kubeconfigPath
+	if err := cfg.Init(getter, namespace, "secret", func(string, ...interface{}) {}); err != nil {
+		return "", fmt.Errorf("initialising Helm: %w", err)
+	}
+	rel, err := action.NewGet(cfg).Run(release)
+	if err != nil {
+		return "", fmt.Errorf("helm get %s: %w", release, err)
+	}
+	if rel.Chart == nil || rel.Chart.Metadata == nil {
+		return "", nil
+	}
+	return rel.Chart.Metadata.Version, nil
 }
 
 // MergeValues deep-merges value files left-to-right (later wins) and then the
