@@ -8,6 +8,7 @@
   import { isIPv4, validate } from './lib/validate';
   import { isTauri, listDisks, runInstall } from './lib/engine';
   import { mergeHandoff, secretFromURI } from './lib/handoff';
+  import { isStaleStateFailure } from './lib/failure';
   import type { DiskInfo, EngineEvent, ExitPayload, Handoff, InstallInput } from './lib/types';
 
   type Phase = 'form' | 'confirm' | 'progress' | 'handoff' | 'error';
@@ -379,7 +380,7 @@
           output={failure?.output ?? ''}
           onRetry={start}
           onBack={() => (phase = 'form')}
-          onStartOver={failure?.msg?.includes('--reinstall') ? startOver : undefined}
+          onStartOver={isStaleStateFailure(failure) ? startOver : undefined}
         />
       {/if}
     </div>
