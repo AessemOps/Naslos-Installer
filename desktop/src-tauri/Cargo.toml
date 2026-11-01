@@ -1,6 +1,6 @@
 [package]
 name = "naslos-installer"
-version = "0.2.4"
+version = "0.2.5"
 description = "Naslos desktop installer"
 authors = ["AessemOps"]
 edition = "2021"
