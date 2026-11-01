@@ -25,8 +25,14 @@
       <pre class="max-h-48 overflow-auto rounded-lg border border-slate-800 bg-slate-950/80 p-3 font-mono text-xs text-slate-400">{output}</pre>
     {/if}
     <p class="hint">
-      The install is resumable: the engine keeps its state and never regenerates the Talos PKI for an
-      already-installed node. Fix the problem and retry.
+      {#if onStartOver}
+        The saved state says this node is installed, but the node is in maintenance, so it cannot be
+        resumed. <span class="font-medium text-slate-300">Start over</span> moves the old state into a
+        timestamped backup and reinstalls; the install disk is erased.
+      {:else}
+        The install is resumable: the engine keeps its state and never regenerates the Talos PKI for an
+        already-installed node. Fix the problem and retry.
+      {/if}
     </p>
   </section>
 
