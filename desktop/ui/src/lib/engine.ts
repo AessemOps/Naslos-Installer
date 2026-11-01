@@ -46,14 +46,22 @@ export async function listDisks(nodeIp: string): Promise<DiskInfo[]> {
 
 // runInstall starts the install and returns a cancel function. Cancelling kills
 // the engine (Tauri) or stops the simulation (browser).
-export async function runInstall(input: InstallInput, handlers: RunHandlers): Promise<() => void> {
+export async function runInstall(
+  input: InstallInput,
+  handlers: RunHandlers,
+  resume = false,
+): Promise<() => void> {
   if (isTauri()) {
-    return runTauri(input, handlers);
+    return runTauri(input, handlers, resume);
   }
-  return runSimulated(input, handlers);
+  return runSimulated(input, handlers, resume);
 }
 
-async function runTauri(input: InstallInput, handlers: RunHandlers): Promise<() => void> {
+async function runTauri(
+  input: InstallInput,
+  handlers: RunHandlers,
+  resume: boolean,
+): Promise<() => void> {
   const unlisten: UnlistenFn[] = [];
   let currentRunId: number | null = null;
   const ours = (runId: number) => currentRunId === null || runId === currentRunId;
@@ -83,7 +91,7 @@ async function runTauri(input: InstallInput, handlers: RunHandlers): Promise<() 
   );
 
   try {
-    const runId = await invoke<number>('start_install', { input });
+    const runId = await invoke<number>('start_install', { input, resume });
     if (currentRunId === null) currentRunId = runId;
   } catch (error) {
     // The listeners were registered before the spawn; without this they would
@@ -102,7 +110,7 @@ async function runTauri(input: InstallInput, handlers: RunHandlers): Promise<() 
 // stream for the whole flow (including the TOTP and recovery-ZIP payloads) so
 // the wizard can be reviewed and tested without the Rust shell. The UI labels
 // it as simulated.
-function runSimulated(input: InstallInput, handlers: RunHandlers): () => void {
+function runSimulated(input: InstallInput, handlers: RunHandlers, _resume = false): () => void {
   const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
   const otpauth = `otpauth://totp/${input.domain}:${input.adminUser}?algorithm=SHA1&digits=6&issuer=${input.domain}&period=30&secret=${secret}`;
   const loginUrl = `https://${input.domain}/authelia`;

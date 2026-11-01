@@ -71,6 +71,11 @@ Then pass the chosen device as `--install-disk` and repeat it with
 `--confirm-wipe` on the real run. Read-only devices and CD-ROMs are marked as
 non-candidates in the listing.
 
+The engine also detects the node's real network interface (the link that carries
+the node IP) and substitutes it into the pack's `{{INTERFACE}}` placeholder.
+This is `eth0` on the VM and `ens3`/`enp…` on hardware; hardcoding `eth0` leaves
+etcd without an advertised address and fails the bootstrap.
+
 ### Resume an interrupted install
 
 `state.json` records each milestone. If the engine stops after the node is

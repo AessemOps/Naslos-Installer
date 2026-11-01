@@ -84,6 +84,7 @@ fn start_install(
     app: AppHandle,
     state: State<'_, EngineState>,
     input: InstallInput,
+    resume: bool,
 ) -> Result<u64, String> {
     // Hold the lock across check + spawn + store. Releasing between the check
     // and the store let two concurrent invokes both start an engine, and only
@@ -112,6 +113,10 @@ fn start_install(
     ];
     if input.reinstall {
         args.push("--reinstall".to_string());
+    } else if resume {
+        // Retry after a failed install must resume the persisted state; without
+        // this the preflight sees an installed node and refuses to continue.
+        args.push("--resume".to_string());
     }
     if !input.name.trim().is_empty() {
         args.push("--name".to_string());

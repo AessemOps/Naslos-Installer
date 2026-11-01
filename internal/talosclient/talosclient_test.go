@@ -23,6 +23,7 @@ func (f *fakeAPI) Kubeconfig(context.Context) ([]byte, error) { return []byte("k
 func (f *fakeAPI) Disks(context.Context) ([]DiskInfo, error) {
 	return []DiskInfo{{Device: "/dev/vda", Size: 1 << 30}}, nil
 }
+func (f *fakeAPI) Interface(context.Context, string) (string, error) { return "eth0", nil }
 
 func (f *fakeAPI) Version(context.Context) (string, error) {
 	f.versionCalls++

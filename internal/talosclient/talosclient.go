@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/client"
 	clientconfig "github.com/siderolabs/talos/pkg/machinery/client/config"
 	"github.com/siderolabs/talos/pkg/machinery/resources/block"
+	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"google.golang.org/grpc/codes"
 )
 
@@ -31,6 +33,7 @@ type API interface {
 	Kubeconfig(ctx context.Context) ([]byte, error)
 	Version(ctx context.Context) (string, error)
 	Disks(ctx context.Context) ([]DiskInfo, error)
+	Interface(ctx context.Context, ip string) (string, error)
 	Services(ctx context.Context) (map[string]string, error)
 	Close() error
 }
@@ -135,6 +138,50 @@ func (t *talosAPI) Disks(ctx context.Context) ([]DiskInfo, error) {
 		})
 	}
 	return out, nil
+}
+
+// Interface returns the network link that carries the node IP. The installer
+// template must name the real link: hardcoding eth0 works on the VM but fails
+// on hardware that uses predictable names such as ens3, leaving etcd unable to
+// build its advertised peer URL. Falls back to the first physical link that is
+// up when the address resource is not available yet.
+func (t *talosAPI) Interface(ctx context.Context, ip string) (string, error) {
+	addrKind := resource.NewMetadata(network.NamespaceName, network.AddressStatusType, "", resource.VersionUndefined)
+	addresses, err := t.c.COSI.List(ctx, addrKind)
+	if err == nil {
+		for _, item := range addresses.Items {
+			addr, ok := item.(*network.AddressStatus)
+			if !ok {
+				continue
+			}
+			spec := addr.TypedSpec()
+			if spec.LinkName != "" && spec.Address.Addr().String() == ip {
+				return spec.LinkName, nil
+			}
+		}
+	}
+
+	linkKind := resource.NewMetadata(network.NamespaceName, network.LinkStatusType, "", resource.VersionUndefined)
+	links, err := t.c.COSI.List(ctx, linkKind)
+	if err != nil {
+		return "", fmt.Errorf("listing network links: %w", err)
+	}
+	var names []string
+	for _, item := range links.Items {
+		link, ok := item.(*network.LinkStatus)
+		if !ok {
+			continue
+		}
+		spec := link.TypedSpec()
+		if spec.Physical() && spec.LinkState {
+			names = append(names, link.Metadata().ID())
+		}
+	}
+	if len(names) > 0 {
+		sort.Strings(names)
+		return names[0], nil
+	}
+	return "", fmt.Errorf("no physical network link carries %s", ip)
 }
 
 func (t *talosAPI) Services(ctx context.Context) (map[string]string, error) {

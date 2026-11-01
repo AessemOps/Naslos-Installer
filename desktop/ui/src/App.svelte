@@ -125,7 +125,7 @@
     phase = 'confirm';
   }
 
-  async function start() {
+  async function start(resume = false) {
     touched = true;
     if (invalid) return;
     phase = 'progress';
@@ -140,6 +140,7 @@
       cancel = await runInstall(
         { ...input, name: input.name || derivedName },
         { onEvent: handleEvent, onLog: pushLog, onExit: handleExit },
+        resume,
       );
     } catch (error) {
       failure = {
@@ -346,7 +347,7 @@
 
           <div class="flex justify-between">
             <button class="btn-secondary" type="button" on:click={() => (phase = 'form')}>Back</button>
-            <button class="btn-primary" type="button" on:click={start} disabled={!wipeConfirmed}>Start install</button>
+            <button class="btn-primary" type="button" on:click={() => start()} disabled={!wipeConfirmed}>Start install</button>
           </div>
         </div>
       {:else if phase === 'progress'}
@@ -378,7 +379,7 @@
           step={failure?.step ?? ''}
           message={failure?.msg ?? 'Unknown error.'}
           output={failure?.output ?? ''}
-          onRetry={start}
+          onRetry={() => start(true)}
           onBack={() => (phase = 'form')}
           onStartOver={isStaleStateFailure(failure) ? startOver : undefined}
         />
