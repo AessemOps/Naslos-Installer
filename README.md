@@ -91,9 +91,28 @@ before touching it, then skips the steps already recorded as done (bootstrapping
 storage, certificate stack, Helm, administrator, TOTP). Administrator creation is
 idempotent: an existing exact uid is not POSTed again. A state that never reached
 an installed node is refused, as is re-running an installed state without
-`--resume`. This is also how an installed node gains a step added by a later
-release: a 0.2.5 install resumes once on 0.2.6 to get cert-manager and the OVH
-webhook without re-keying.
+`--resume`. `--admin-password-stdin` / `NASLOS_ADMIN_PASSWORD` is only required
+while the `admin` step is still pending, so a resume past it needs no throwaway
+value.
+
+Resume also **converges** the release: when the deployed chart version is older
+than the pack's, the engine re-runs the Helm step with the new pack's values and
+its recomputed overrides (the release stores merged values, so it resets them).
+This is how an installed node gains a step added by a later release (for
+example a 0.2.5 install resumes once on 0.2.6 to get cert-manager and the OVH
+webhook), and it is the **bootstrap path from 0.2.x to the first
+web-upgradable 0.3.0 release**:
+
+```bash
+read -rs NASLOS_ADMIN_PASSWORD && export NASLOS_ADMIN_PASSWORD
+dist/naslos-install --resume --node-ip 192.168.1.117 --domain naslos.local \
+  --admin-user admin --install-disk /dev/vda --confirm-wipe /dev/vda
+unset NASLOS_ADMIN_PASSWORD
+```
+
+The machine config is generated with the pack's explicit `kubernetesVersion`
+(never the Talos machinery default), so an upgraded node and a fresh install
+target the same Kubernetes minor.
 
 ### Re-key a node (reinstall)
 

@@ -84,3 +84,14 @@ func TestValidateAcceptsALANAddress(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 }
+
+func TestValidateAllowsAnEmptyPasswordUntilTheAdminStep(t *testing.T) {
+	in := valid()
+	in.AdminPassword = ""
+	if err := in.Validate(); err != nil {
+		t.Fatalf("an empty password must be allowed for a resume past the admin step: %v", err)
+	}
+	if err := ValidatePassword(""); err == nil {
+		t.Fatal("ValidatePassword must still reject an empty password when asked")
+	}
+}

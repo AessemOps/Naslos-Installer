@@ -177,3 +177,23 @@ func TestASymlinkedMemberIsRefused(t *testing.T) {
 		t.Fatalf("want a symlink error, got %v", err)
 	}
 }
+
+func TestChartVersionLess(t *testing.T) {
+	cases := []struct {
+		deployed, pack string
+		want           bool
+	}{
+		{"0.2.6", "0.3.0", true},
+		{"0.3.0", "0.3.0", false},
+		{"0.3.1", "0.3.0", false},
+		{"", "0.3.0", true},
+		{"not-a-version", "0.3.0", true},
+		{"0.3.0", "not-a-version", false},
+		{"v0.2.6", "v0.3.0", true},
+	}
+	for _, tc := range cases {
+		if got := ChartVersionLess(tc.deployed, tc.pack); got != tc.want {
+			t.Errorf("ChartVersionLess(%q, %q) = %v, want %v", tc.deployed, tc.pack, got, tc.want)
+		}
+	}
+}
