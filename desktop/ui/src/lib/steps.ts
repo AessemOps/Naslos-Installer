@@ -5,6 +5,7 @@ import type { InstallInput } from './types';
 // the desktop-installer plan.
 export const STEP_LABELS: Record<string, string> = {
   config: 'Validate inputs',
+  state: 'Prepare the saved state',
   pack: 'Verify install pack',
   preflight: 'Check the node',
   'machine-config': 'Generate machine config',
