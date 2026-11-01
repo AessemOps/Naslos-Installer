@@ -477,6 +477,17 @@ func run(args []string, stdout io.Writer) error {
 		}
 	}
 
+	// --- milestone 4b: cert-manager + the OVH DNS-01 webhook ---
+	// Runs before the Naslos release: its installer profile enables the webhook
+	// RBAC, and the Domains page gates certificate issuance on the CRDs.
+	if st.StepDone(certManagerStep) {
+		if err := em.Step(certManagerStep, "The certificate stack is already installed", 81); err != nil {
+			return err
+		}
+	} else if err := installCertManager(ctx, em, pack, cluster, kubeconfigPath, statePath, st); err != nil {
+		return err
+	}
+
 	// --- milestone 5: deploy Naslos from the pack's chart ---
 	// The API pod mounts the naslos-talosconfig Secret, and the chart has no
 	// template for it, so the engine pre-creates the namespace and the Secret
