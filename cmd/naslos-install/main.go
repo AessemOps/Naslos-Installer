@@ -198,6 +198,13 @@ func run(args []string, stdout io.Writer) error {
 	if opts.resume && st == nil {
 		return em.Fail("state", "cannot resume", "--resume needs a state file from the interrupted install")
 	}
+	// The password is only needed when the admin step is still pending. A
+	// resume after that step (the bootstrap path from 0.2.x, or a CLI upgrade)
+	// must not require a throwaway value.
+	if !opts.dryRun && !st.StepDone("admin") && opts.input.AdminPassword == "" {
+		return em.Fail("admin", "the administrator password is required",
+			"pass --admin-password-stdin or set NASLOS_ADMIN_PASSWORD")
+	}
 	st.SetStep("pack", state.Done, pack.Metadata().NaslosVersion)
 	if err := st.Save(statePath); err != nil {
 		return em.Fail("state", "cannot persist install state", err.Error())
@@ -305,10 +312,11 @@ func run(args []string, stdout io.Writer) error {
 		return em.Fail("talos-config", "cannot prepare the Talos PKI", err.Error())
 	}
 	gen, err := talosconfig.Generate(talosconfig.Inputs{
-		ClusterName:  "naslos",
-		NodeIP:       opts.input.NodeIP,
-		TalosVersion: pack.Metadata().TalosVersion,
-		InstallDisk:  opts.installDisk,
+		ClusterName:       "naslos",
+		NodeIP:            opts.input.NodeIP,
+		TalosVersion:      pack.Metadata().TalosVersion,
+		KubernetesVersion: pack.Metadata().KubernetesVersion,
+		InstallDisk:       opts.installDisk,
 	}, rendered, bundle)
 	if err != nil {
 		return em.Fail("talos-config", "cannot generate the Talos config", err.Error())
@@ -492,11 +500,26 @@ func run(args []string, stdout io.Writer) error {
 	// The API pod mounts the naslos-talosconfig Secret, and the chart has no
 	// template for it, so the engine pre-creates the namespace and the Secret
 	// (from the generated talosconfig, endpoints filled) before Helm runs.
-	if st.StepDone("helm") {
-		if err := em.Step("helm", "Naslos is already deployed", 88); err != nil {
-			return err
+	needsHelm := !st.StepDone("helm")
+	if !needsHelm {
+		deployed, versionErr := helm.DeployedVersion(kubeconfigPath, "naslos", "naslos")
+		switch {
+		case versionErr != nil:
+			// Keep the old behavior (skip) but surface why convergence could
+			// not be proven; the operator can still force it with --reinstall.
+			if err := em.Progress("helm", event.Running, 88,
+				"Could not read the deployed chart version: "+versionErr.Error()); err != nil {
+				return err
+			}
+		case installpack.ChartVersionLess(deployed, pack.Metadata().ChartVersion):
+			needsHelm = true
+			if err := em.Progress("helm", event.Running, 82,
+				"Converging the release from chart "+deployed+" to "+pack.Metadata().ChartVersion); err != nil {
+				return err
+			}
 		}
-	} else {
+	}
+	if needsHelm {
 		if err := em.Step("helm", "Deploying Naslos", 82); err != nil {
 			return err
 		}
@@ -565,6 +588,8 @@ func run(args []string, stdout io.Writer) error {
 		if err := em.Step("helm", "Naslos deployed", 88); err != nil {
 			return err
 		}
+	} else if err := em.Step("helm", "Naslos is already deployed", 88); err != nil {
+		return err
 	}
 
 	// --- milestone 6: first administrator + TOTP ---

@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -28,16 +29,17 @@ const PackName = "naslos-install-pack"
 
 // Metadata mirrors the pack's metadata.json.
 type Metadata struct {
-	Name            string            `json:"name"`
-	FormatVersion   int               `json:"formatVersion"`
-	NaslosVersion   string            `json:"naslosVersion"`
-	ChartVersion    string            `json:"chartVersion"`
-	ChartAppVersion string            `json:"chartAppVersion"`
-	TalosVersion    string            `json:"talosVersion"`
-	SchematicID     string            `json:"schematicId"`
-	ISOUrls         map[string]string `json:"isoUrls"`
-	GeneratedAt     string            `json:"generatedAt"`
-	Checksums       map[string]string `json:"checksums"`
+	Name              string            `json:"name"`
+	FormatVersion     int               `json:"formatVersion"`
+	NaslosVersion     string            `json:"naslosVersion"`
+	ChartVersion      string            `json:"chartVersion"`
+	ChartAppVersion   string            `json:"chartAppVersion"`
+	TalosVersion      string            `json:"talosVersion"`
+	SchematicID       string            `json:"schematicId"`
+	KubernetesVersion string            `json:"kubernetesVersion"`
+	ISOUrls           map[string]string `json:"isoUrls"`
+	GeneratedAt       string            `json:"generatedAt"`
+	Checksums         map[string]string `json:"checksums"`
 }
 
 // ISOURL returns the metal-amd64 ISO URL (the only one published today).
@@ -77,6 +79,41 @@ func Load(fsys fs.FS, expectedTalos, expectedSchematic string) (*Pack, error) {
 		return nil, fmt.Errorf("pack schematicId %q != expected %q", meta.SchematicID, expectedSchematic)
 	}
 	return &Pack{meta: meta, fsys: fsys}, nil
+}
+
+// ChartVersionLess reports whether deployed < pack, comparing strict X.Y.Z
+// versions. A non-semver value is treated as older so a resume converges.
+func ChartVersionLess(deployed, pack string) bool {
+	d, okD := parseSemver(deployed)
+	p, okP := parseSemver(pack)
+	if !okP {
+		return false
+	}
+	if !okD {
+		return true
+	}
+	for i := range d {
+		if d[i] != p[i] {
+			return d[i] < p[i]
+		}
+	}
+	return false
+}
+
+func parseSemver(v string) ([3]int, bool) {
+	var out [3]int
+	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(v), "v"), ".")
+	if len(parts) != 3 {
+		return out, false
+	}
+	for i, part := range parts {
+		n, err := strconv.Atoi(part)
+		if err != nil || n < 0 {
+			return out, false
+		}
+		out[i] = n
+	}
+	return out, true
 }
 
 // Metadata returns the pack metadata.
