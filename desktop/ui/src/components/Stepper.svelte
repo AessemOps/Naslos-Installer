@@ -10,13 +10,25 @@
 
   type State = 'running' | 'ok' | 'failed' | 'pending';
 
-  function stateOf(step: string, index: number): State {
-    if (status[step] === 'failed') return 'failed';
-    if (status[step] === 'ok') return 'ok';
-    if (step === currentStep) return 'running';
-    if (currentIndex >= 0 && index < currentIndex) return 'ok';
+  // Every input is a parameter on purpose. In Svelte's legacy reactivity a
+  // `{@const x = fn(step, index)}` only re-runs when `step`/`index` change, so a
+  // helper that read `status`/`currentStep` from the closure froze every step
+  // at "pending" (all grey) for the whole install.
+  function stateOf(
+    step: string,
+    index: number,
+    statusMap: Record<string, 'running' | 'ok' | 'failed'>,
+    active: string,
+    activeIndex: number,
+  ): State {
+    if (statusMap[step] === 'failed') return 'failed';
+    if (statusMap[step] === 'ok') return 'ok';
+    if (step === active) return 'running';
+    if (activeIndex >= 0 && index < activeIndex) return 'ok';
     return 'pending';
   }
+
+  $: states = steps.map((step, index) => stateOf(step, index, status, currentStep, currentIndex));
 
   const dot: Record<State, string> = {
     running: 'border-sky-400 text-sky-300',
@@ -28,7 +40,7 @@
 
 <ol class="space-y-1">
   {#each steps as step, index (step)}
-    {@const state = stateOf(step, index)}
+    {@const state = states[index] ?? 'pending'}
     <li
       class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm {state === 'running'
         ? 'bg-sky-950/40'

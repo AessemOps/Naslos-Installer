@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/AessemOps/Naslos-Installer/internal/config"
+	"github.com/AessemOps/Naslos-Installer/internal/preflight"
 	"github.com/AessemOps/Naslos-Installer/internal/state"
 )
 
@@ -198,24 +199,39 @@ func TestResumeDecision(t *testing.T) {
 	t.Setenv("NASLOS_ADMIN_PASSWORD", "Correct1")
 	in := config.Input{NodeIP: "192.168.1.117", Domain: "naslos.local", AdminUser: "admin", AdminPassword: "Correct1"}
 
-	if err := resumeDecision(true, nil); err == nil {
+	if err := resumeDecision(true, nil, preflight.Installed); err == nil {
 		t.Fatal("resume without a state file must fail")
 	}
 
 	fresh := state.New(in, "0.2.3")
 	fresh.SetStep("pack", state.Done, "")
-	if err := resumeDecision(true, fresh); err == nil {
+	if err := resumeDecision(true, fresh, preflight.Installed); err == nil {
 		t.Fatal("resume before the Talos config must fail")
 	}
 
 	installed := state.New(in, "0.2.3")
 	installed.SetStep("talos-config", state.Done, "")
 	installed.SetStep("bootstrap", state.Done, "")
-	if err := resumeDecision(true, installed); err != nil {
-		t.Fatalf("a completed state must resume: %v", err)
+
+	if err := resumeDecision(true, installed, preflight.Installed); err != nil {
+		t.Fatalf("a completed state on an installed node must resume: %v", err)
 	}
-	if err := resumeDecision(false, installed); err == nil {
+	if err := resumeDecision(false, installed, preflight.Installed); err == nil {
 		t.Fatal("a plain re-run of an installed state must ask for --resume")
+	}
+
+	// The bug this fixes: the node is in maintenance but the state says the
+	// install completed. That is a reinstall, not a resume, and must say so.
+	for _, resume := range []bool{false, true} {
+		err := resumeDecision(resume, installed, preflight.Maintenance)
+		if err == nil || !strings.Contains(err.Error(), "--reinstall") {
+			t.Fatalf("resume=%v: want a --reinstall hint, got %v", resume, err)
+		}
+	}
+
+	// A fresh/partial state on a maintenance node is a normal install.
+	if err := resumeDecision(false, fresh, preflight.Maintenance); err != nil {
+		t.Fatalf("a partial state in maintenance must install: %v", err)
 	}
 }
 

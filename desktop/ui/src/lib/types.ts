@@ -13,6 +13,9 @@ export interface InstallInput {
   nodeIp: string;
   domain: string;
   installDisk: string;
+  /// Move the saved state aside and re-key the node. Only set from the error
+  /// screen's "Start over" action.
+  reinstall: boolean;
   name: string;
   adminUser: string;
   adminPassword: string;
