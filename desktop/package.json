@@ -1,6 +1,6 @@
 {
   "name": "naslos-installer-desktop",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Naslos installer desktop shell (Tauri v2) and wizard (Svelte 5)",
   "private": true,
   "type": "module",
