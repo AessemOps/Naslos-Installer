@@ -321,7 +321,7 @@
 
           <label class="flex items-start gap-2 text-sm text-rose-200">
             <input class="mt-0.5 h-4 w-4 rounded border-rose-700 bg-slate-900" type="checkbox" bind:checked={wipeConfirmed} />
-            <span>I have checked that <span class="font-mono">{input.installDisk}</span> is the intended disk and may be erased.</span>
+            <span>I have checked that <span class="font-mono">{input.installDisk}</span> is the intended disk and will be erased.</span>
           </label>
 
           <p class="hint">
