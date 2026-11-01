@@ -194,9 +194,19 @@ fn start_install(
 struct DiskInfo {
     device: String,
     size: u64,
+    // The engine omits empty strings (`omitempty`); a VM disk often has no
+    // model, so requiring these fields made Detect fail on real hardware.
+    #[serde(default)]
     model: String,
+    #[serde(default)]
+    serial: String,
+    #[serde(default)]
+    transport: String,
+    #[serde(default)]
     rotational: bool,
+    #[serde(default)]
     readonly: bool,
+    #[serde(default)]
     cdrom: bool,
 }
 
@@ -288,5 +298,21 @@ mod tests {
         // Cancel then retry: run 7's exit must not clear run 8.
         assert!(!owns_slot(Some(8), 7));
         assert!(!owns_slot(None, 7));
+    }
+}
+
+#[cfg(test)]
+mod disk_tests {
+    use super::DiskInfo;
+
+    #[test]
+    fn a_disk_without_model_or_serial_is_accepted() {
+        // Exactly what the engine emits for a QEMU/virtio disk: `model`,
+        // `serial` and `transport` are omitted when empty.
+        let raw = r#"[{"device":"/dev/vda","size":34359738368,"rotational":false,"readonly":false,"cdrom":false}]"#;
+        let disks: Vec<DiskInfo> = serde_json::from_str(raw).expect("parse engine payload");
+        assert_eq!(disks.len(), 1);
+        assert_eq!(disks[0].device, "/dev/vda");
+        assert!(disks[0].model.is_empty());
     }
 }
