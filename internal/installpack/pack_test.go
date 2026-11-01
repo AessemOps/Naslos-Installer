@@ -19,7 +19,7 @@ const (
 func testPack(t *testing.T, mutate func(*Metadata, map[string][]byte)) fstest.MapFS {
 	t.Helper()
 	members := map[string][]byte{
-		"machine-config/naslos-installer.yaml.tmpl": []byte("apiVersion: v1alpha1\nkind: KubeNodeConfig\nsubnet: \"{{NODE_SUBNET}}\"\ndisk: \"{{INSTALL_DISK}}\"\n"),
+		"machine-config/naslos-installer.yaml.tmpl": []byte("apiVersion: v1alpha1\nkind: KubeNodeConfig\nsubnet: \"{{NODE_SUBNET}}\"\ndisk: \"{{INSTALL_DISK}}\"\ninterface: \"{{INTERFACE}}\"\n"),
 		"schematic/naslos.yaml":                     []byte("customization: {}\n"),
 		"charts/naslos/Chart.yaml":                  []byte("apiVersion: v2\nname: naslos\n"),
 	}
@@ -110,6 +110,7 @@ func TestRenderMachineConfig(t *testing.T) {
 	out, err := p.RenderMachineConfig(map[string]string{
 		"NODE_SUBNET":  "192.168.1.0/24",
 		"INSTALL_DISK": "/dev/vda",
+		"INTERFACE":    "ens3",
 	})
 	if err != nil {
 		t.Fatalf("RenderMachineConfig: %v", err)

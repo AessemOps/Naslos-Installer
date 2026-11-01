@@ -6,15 +6,29 @@ Session-to-session state for `AessemOps/Naslos-Installer`. Companion repo:
 Plan: [`.kilo/plans/desktop-installer-app.md`](.kilo/plans/desktop-installer-app.md).
 Spec: `Naslos-Linux/docs/spec.md` §FR-INSTALL.
 
-## In progress — 0.3.0 pack contract (not released)
+## Released — 0.3.0
 
-The engine now consumes the pack's additive `kubernetesVersion` (passed
-explicitly to `generate.NewInput`; older packs fall back to the machinery
-default), re-runs Helm on `--resume` when the deployed chart is older than the
-pack (with `ResetValues`, so the new pack's images win), and requires the admin
-password only while the `admin` step is pending. This is the bootstrap path from
-0.2.x to the first web-upgradable release; it ships as `naslos-v0.3.0` with the
-Naslos-Linux `v0.3.0` pack (version parity).
+`naslos-v0.3.0` was published from the Naslos-Linux `v0.3.0` pack. It consumes
+the pack's additive `kubernetesVersion` (passed explicitly to
+`generate.NewInput`; older packs fall back to the machinery default), re-runs
+Helm on `--resume` when the deployed chart is older than the pack (with
+`ResetValues`), and requires the admin password only while the `admin` step is
+pending.
+
+## In progress — 0.3.1 NIC detection
+
+The first 0.3.0 install on the physical node failed because the pack template
+hardcoded `interface: eth0` while the NIC is `ens3`; etcd could not build its
+initial cluster and the installer timed out on `etcd`/`kubelet`. The engine now
+detects the link that carries the node IP from the maintenance-mode Talos
+COSI resources (falling back to the first physical link that is up) and
+substitutes `{{INTERFACE}}`. The node was manually recovered (apply `ens3`,
+bootstrap, fetch kubeconfig, mark `bootstrap` done) and the 0.3.0 GUI can be
+retried to finish storage/cert-manager/Helm. The 0.3.1 installer + pack fix
+ships together; see
+`.kilo/plans/1793600000001-installer-interface.md`. Version is bumped to 0.3.1
+in this branch; do not publish `naslos-v0.3.1` until the Naslos-Linux 0.3.1
+pack exists.
 
 ## What this is
 
