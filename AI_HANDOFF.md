@@ -26,12 +26,12 @@ the VM resolves to `eth0`, hardware to `ens3`/`enp…`.
 The 0.3.3 API image is deployed on the node; the web updater now offers the
 full 0.3.3 release. The updater null-release and pack-root fixes are included.
 
-## In progress — 0.3.4
+## Released — 0.3.4
 
-Source is bumped to 0.3.4 for version parity (desktop app, Tauri shell, engine
-build metadata). The matching Naslos-Linux `v0.3.4` pack (upgrader ConfigMap
-`data` write and `TALOS_NODES` fix) is not released yet. Do not publish an
-installer-only 0.3.4 build before that pack exists.
+`naslos-v0.3.4` was published by the `Naslos-Linux v0.3.4` release dispatch,
+from the `v0.3.4` pack. The engine, desktop app and Tauri shell are at 0.3.4
+(version parity). The pack carries the upgrader ConfigMap `data` write and the
+`TALOS_NODES` fix; the node completed the 0.3.1 → 0.3.4 web upgrade.
 
 ## What this is
 
