@@ -15,17 +15,16 @@ Helm on `--resume` when the deployed chart is older than the pack (with
 `ResetValues`), and requires the admin password only while the `admin` step is
 pending.
 
-## Released — 0.3.2
+## Released — 0.3.3
 
-`naslos-v0.3.2` is published from the Naslos-Linux `v0.3.2` pack. It includes
+`naslos-v0.3.3` is published from the Naslos-Linux `v0.3.3` pack. It includes
 the NIC detection fix (`{{INTERFACE}}`, the 0.3.0 install blocker), the desktop
-Retry `--resume` fix, and the engine/UI version 0.3.2 parity. The engine
+Retry `--resume` fix, and the engine/UI version 0.3.3 parity. The engine
 detects the link carrying the node IP from maintenance-mode Talos resources;
 the VM resolves to `eth0`, hardware to `ens3`/`enp…`.
 
-The 0.3.1 node's API still has the old updater parser, so it cannot discover
-0.3.2 by itself; use the 0.3.2 installer (reinstall/upgrade path) or deploy the
-0.3.2 API image first. The updater null-release fix is in this release.
+The 0.3.3 API image is deployed on the node; the web updater now offers the
+full 0.3.3 release. The updater null-release and pack-root fixes are included.
 
 ## What this is
 
