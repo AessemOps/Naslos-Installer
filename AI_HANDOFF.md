@@ -15,21 +15,17 @@ Helm on `--resume` when the deployed chart is older than the pack (with
 `ResetValues`), and requires the admin password only while the `admin` step is
 pending.
 
-## In progress — 0.3.1 NIC detection
+## Released — 0.3.2
 
-The first 0.3.0 install on the physical node failed because the pack template
-hardcoded `interface: eth0` while the NIC is `ens3`; etcd could not build its
-initial cluster and the installer timed out on `etcd`/`kubelet`. The engine now
-detects the link that carries the node IP from the maintenance-mode Talos
-COSI resources (falling back to the first physical link that is up) and
-substitutes `{{INTERFACE}}`. The node was manually recovered (apply `ens3`,
-bootstrap, fetch kubeconfig, mark `bootstrap` done) and the 0.3.0 GUI can be
-retried to finish storage/cert-manager/Helm. The desktop Retry button also now passes `--resume`; the 0.3.0 GUI's Retry
-re-ran the engine without it and could not continue an installed node. The
-0.3.1 installer + pack fix ships together; see
-`.kilo/plans/1793600000001-installer-interface.md`. Version is bumped to 0.3.1
-in this branch; do not publish `naslos-v0.3.1` until the Naslos-Linux 0.3.1
-pack exists.
+`naslos-v0.3.2` is published from the Naslos-Linux `v0.3.2` pack. It includes
+the NIC detection fix (`{{INTERFACE}}`, the 0.3.0 install blocker), the desktop
+Retry `--resume` fix, and the engine/UI version 0.3.2 parity. The engine
+detects the link carrying the node IP from maintenance-mode Talos resources;
+the VM resolves to `eth0`, hardware to `ens3`/`enp…`.
+
+The 0.3.1 node's API still has the old updater parser, so it cannot discover
+0.3.2 by itself; use the 0.3.2 installer (reinstall/upgrade path) or deploy the
+0.3.2 API image first. The updater null-release fix is in this release.
 
 ## What this is
 
