@@ -33,6 +33,13 @@ from the `v0.3.4` pack. The engine, desktop app and Tauri shell are at 0.3.4
 (version parity). The pack carries the upgrader ConfigMap `data` write and the
 `TALOS_NODES` fix; the node completed the 0.3.1 → 0.3.4 web upgrade.
 
+## In progress — 0.3.5
+
+Source is bumped to 0.3.5 for version parity (desktop app, Tauri shell, engine
+build metadata). The matching Naslos-Linux `v0.3.5` pack (official catalog
+source follows `NaslosCharts` `main` instead of a fixed commit) is not released
+yet. Do not publish an installer-only 0.3.5 build before that pack exists.
+
 ## What this is
 
 The desktop installer (Tauri v2 shell + Svelte wizard) plus the headless Go
