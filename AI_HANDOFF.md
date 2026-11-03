@@ -42,12 +42,13 @@ from the `v0.3.5` pack. The engine, desktop app and Tauri shell are at 0.3.5
 charts. The macOS bundle was rerun once after a runner cancellation; all
 platform assets are attached.
 
-## In progress — 0.3.6
+## Released — 0.3.6
 
-Source is bumped to 0.3.6 for version parity (desktop app, Tauri shell, engine
-build metadata). The matching Naslos-Linux `v0.3.6` pack (catalog chart icons
-from `Chart.yaml`) is not released yet. Do not publish an installer-only 0.3.6
-build before that pack exists.
+`naslos-v0.3.6` was published by the `Naslos-Linux v0.3.6` release dispatch,
+from the `v0.3.6` pack. The engine, desktop app and Tauri shell are at 0.3.6
+(version parity). The pack carries catalog chart icons (the API exposes the
+`Chart.yaml` `icon` URL and the UI renders it). The macOS bundle was rerun once
+after a runner cancellation; all platform assets are attached.
 
 ## What this is
 
