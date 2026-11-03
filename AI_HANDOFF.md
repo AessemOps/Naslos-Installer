@@ -42,6 +42,13 @@ from the `v0.3.5` pack. The engine, desktop app and Tauri shell are at 0.3.5
 charts. The macOS bundle was rerun once after a runner cancellation; all
 platform assets are attached.
 
+## In progress — 0.3.6
+
+Source is bumped to 0.3.6 for version parity (desktop app, Tauri shell, engine
+build metadata). The matching Naslos-Linux `v0.3.6` pack (catalog chart icons
+from `Chart.yaml`) is not released yet. Do not publish an installer-only 0.3.6
+build before that pack exists.
+
 ## What this is
 
 The desktop installer (Tauri v2 shell + Svelte wizard) plus the headless Go
