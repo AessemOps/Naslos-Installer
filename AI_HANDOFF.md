@@ -50,6 +50,13 @@ from the `v0.3.6` pack. The engine, desktop app and Tauri shell are at 0.3.6
 `Chart.yaml` `icon` URL and the UI renders it). The macOS bundle was rerun once
 after a runner cancellation; all platform assets are attached.
 
+## Released — 0.3.7
+
+`naslos-v0.3.7` was published by the `Naslos-Linux v0.3.7` release dispatch,
+from the `v0.3.7` pack (Talos **v1.14.5**). The engine, desktop app and Tauri
+shell are at 0.3.7 (version parity). The pack carries the UI node-reboot action
+and the ZFS dataset/disk safety fixes; the node is on Talos v1.14.5.
+
 ## What this is
 
 The desktop installer (Tauri v2 shell + Svelte wizard) plus the headless Go
