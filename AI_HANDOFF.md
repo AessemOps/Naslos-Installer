@@ -57,6 +57,14 @@ from the `v0.3.7` pack (Talos **v1.14.5**). The engine, desktop app and Tauri
 shell are at 0.3.7 (version parity). The pack carries the UI node-reboot action
 and the ZFS dataset/disk safety fixes; the node is on Talos v1.14.5.
 
+## Released — 0.3.8
+
+`naslos-v0.3.8` was published by the `Naslos-Linux v0.3.8` release dispatch,
+from the `v0.3.8` pack (Talos **v1.14.5**). The engine, desktop app and Tauri
+shell are at 0.3.8. The pack adds pool-backed app persistence plus the ZFS
+disk/share permission fixes; the operator updates the instance from the
+Naslos web UI.
+
 ## What this is
 
 The desktop installer (Tauri v2 shell + Svelte wizard) plus the headless Go
