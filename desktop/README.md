@@ -16,7 +16,9 @@ src-tauri/binaries/     built engine sidecar (gitignored)
 ## Develop
 
 ```bash
-# From the repo root: build the engine sidecar Tauri spawns.
+# From the repo root: fetch the pack the engine embeds, then build the sidecar
+# Tauri spawns.
+make fetch-latest-pack
 ./scripts/build-sidecar.sh
 
 # From desktop/: run the Tauri dev window (Vite dev server + Rust shell).

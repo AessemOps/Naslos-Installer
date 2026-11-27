@@ -53,11 +53,15 @@ recovery ZIP. The shell spawns `naslos-install` as a sidecar and streams its
 NDJSON progress to the window. See [`desktop/README.md`](desktop/README.md).
 
 ```bash
+make fetch-latest-pack            # install pack the engine embeds
 ./scripts/build-sidecar.sh        # build the engine the shell spawns
 cd desktop && npm install
 npm run tauri dev                 # the desktop window
 npm run dev                       # browser preview (simulated engine)
 ```
+
+The sidecar build reads `installpack/metadata.json` to pin the Talos version
+and schematic, so fetch the pack before the first build on a fresh checkout.
 
 ## Headless engine
 
@@ -174,8 +178,10 @@ it sees this state/node mismatch.
   Naslos-Linux `vX.Y.Z` tag and derives `ExpectedTalosVersion` and
   `ExpectedSchematicID` from that pack, so the FR-INSTALL-02 gate always
   matches.
-- Tauri `.AppImage`/`.deb`/`.rpm`, `.dmg`/`.app`, and `.msi`/`.exe` bundles are
-  the next release increment (I8b).
+- The same workflow builds the desktop bundles next to the engine binaries:
+  AppImage and `.deb` on Linux amd64, `.app.tar.gz` and `.dmg` on macOS arm64,
+  and an NSIS setup `.exe` on Windows amd64. It does not produce `.rpm` or
+  `.msi` packages.
 
 ## Status
 
@@ -201,9 +207,6 @@ The generated control plane matches `talosctl gen config` on the pack patch
 2026-10-03: Talos node Ready, Naslos pods Running, `/authelia/` returning 200,
 and an Authelia first-factor plus CLI-generated TOTP login returning 200. The
 engine completes to the `done` event.
-
-Next increment (see `.kilo/plans/desktop-installer-app.md`): the per-OS Tauri
-bundles (I8b).
 
 ## License
 
